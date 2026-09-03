@@ -1,0 +1,23 @@
+# gradle
+.gradle/
+build/
+out/
+run/
+src/generated/
+
+# ide
+.idea/
+*.iml
+*.ipr
+*.iws
+.eclipse/
+.settings/
+.classpath
+.project
+bin/
+
+# forge
+logs/
+
+# jar mod pihak ketiga untuk testing lokal
+libs/

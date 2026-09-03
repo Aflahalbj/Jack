@@ -1,0 +1,52 @@
+{
+  "card_shuffle": {
+    "category": "player",
+    "subtitle": "subtitles.jackofhearts.card_shuffle",
+    "sounds": [
+      {
+        "name": "jackofhearts:card_shuffle",
+        "stream": false
+      }
+    ]
+  },
+  "card_flip": {
+    "category": "player",
+    "subtitle": "subtitles.jackofhearts.card_flip",
+    "sounds": [
+      {
+        "name": "jackofhearts:card_flip",
+        "stream": false
+      }
+    ]
+  },
+  "card_deal": {
+    "category": "player",
+    "subtitle": "subtitles.jackofhearts.card_deal",
+    "sounds": [
+      {
+        "name": "jackofhearts:card_deal",
+        "stream": false
+      }
+    ]
+  },
+  "laser_charge": {
+    "category": "player",
+    "subtitle": "subtitles.jackofhearts.laser_charge",
+    "sounds": [
+      {
+        "name": "jackofhearts:laser_charge",
+        "stream": false
+      }
+    ]
+  },
+  "laser_fire": {
+    "category": "player",
+    "subtitle": "subtitles.jackofhearts.laser_fire",
+    "sounds": [
+      {
+        "name": "jackofhearts:laser_fire",
+        "stream": false
+      }
+    ]
+  }
+}

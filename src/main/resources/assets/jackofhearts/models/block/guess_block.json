@@ -1,0 +1,12 @@
+{
+  "parent": "minecraft:block/cube",
+  "textures": {
+    "particle": "jackofhearts:block/guess_block_side",
+    "down": "jackofhearts:block/guess_block_side",
+    "up": "jackofhearts:block/guess_block_top",
+    "north": "jackofhearts:block/guess_block_front",
+    "south": "jackofhearts:block/guess_block_side",
+    "east": "jackofhearts:block/guess_block_side",
+    "west": "jackofhearts:block/guess_block_side"
+  }
+}
