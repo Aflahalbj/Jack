@@ -42,6 +42,7 @@ public class ClientSetup {
     @SubscribeEvent
     public static void onRegisterEntityRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerEntityRenderer(ModEntities.SEAT.get(), SeatEntityRenderer::new);
+        event.registerEntityRenderer(ModEntities.CORPSE.get(), CorpseRenderer::new);
     }
 
     /** Dipanggil dari IClientItemExtensions saat armor dirender. */

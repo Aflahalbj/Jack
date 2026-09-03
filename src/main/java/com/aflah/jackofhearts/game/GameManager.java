@@ -2,6 +2,8 @@ package com.aflah.jackofhearts.game;
 
 import com.aflah.jackofhearts.JackOfHeartsMod;
 import com.aflah.jackofhearts.config.JackConfig;
+import com.aflah.jackofhearts.entity.Blood;
+import com.aflah.jackofhearts.entity.CorpseEntity;
 import com.aflah.jackofhearts.item.SymbolArmorItem;
 import com.aflah.jackofhearts.network.ModNetwork;
 import com.aflah.jackofhearts.network.LaserPacket;
@@ -10,6 +12,7 @@ import com.aflah.jackofhearts.network.OpenRoleRevealPacket;
 import com.aflah.jackofhearts.network.SetCameraPacket;
 import com.aflah.jackofhearts.network.SyncStatePacket;
 import com.aflah.jackofhearts.registry.ModBlocks;
+import com.aflah.jackofhearts.registry.ModEntities;
 import com.aflah.jackofhearts.registry.ModItems;
 import com.aflah.jackofhearts.registry.ModSounds;
 import net.minecraft.ChatFormatting;
@@ -127,8 +130,22 @@ public class GameManager {
     /**
      * Jarak mendatar kamera saat korban di luar ruangan. Di sana jangkarnya korban
      * itu sendiri, jadi tanpa jarak khusus kameranya menempel di kepalanya.
+     *
+     * <p>Sengaja dekat: yang harus terbaca adalah korbannya, bukan pemandangannya.
+     * Dari jarak jauh badan korban tinggal beberapa piksel di tengah layar dan
+     * ambruknya nyaris tidak kelihatan.</p>
      */
-    private static final double CAMERA_OPEN_DISTANCE = 5.5D;
+    private static final double CAMERA_OPEN_DISTANCE = 3.0D;
+    /**
+     * Sudut kamera di luar ruangan, tetap. Negatif berarti mendongak.
+     *
+     * <p>Sengaja tidak dihitung mengarah tepat ke kepala korban: dari jarak sedekat
+     * ini sudut ke kepala hanya sekitar 24 derajat, dan bingkai yang tepat mengunci
+     * kepala membuang sinar yang datang dari langit ke luar layar. Mendongak lebih
+     * tinggi dari itu menaruh korban agak di bawah tengah dan menyisakan ruang di
+     * atasnya untuk sinarnya turun.</p>
+     */
+    private static final float CAMERA_OPEN_PITCH = -30.0F;
     /**
      * Tinggi kamera di atas <b>kaki</b> korban saat di luar ruangan — sengaja rendah,
      * jadi sudutnya mendongak dari bawah. Lasernya turun dari langit, dan sudut rendah
@@ -147,6 +164,13 @@ public class GameManager {
 
     /** Korban yang lasernya sedang mengunci; dieksekusi saat hitungannya habis. */
     private final List<UUID> pendingExecution = new ArrayList<>();
+    /**
+     * Yang ikut ditodong tapi tebakannya benar. Hasilnya baru diumumkan bersamaan
+     * dengan tembakannya, bukan saat fase tebakan berakhir — kalau diumumkan lebih
+     * awal, dia sudah tahu dia selamat sebelum lasernya selesai mengisi dan seluruh
+     * adegannya kehilangan tegangan.
+     */
+    private final List<UUID> pendingSafe = new ArrayList<>();
     /** Adegan eksekusi yang sedang berjalan, per korban. */
     private final Map<UUID, ExecutionShot> executionCameras = new LinkedHashMap<>();
     /** Panjang fase eksekusi saat ini, dipakai menghitung kemajuan putaran pandangan. */
@@ -162,14 +186,17 @@ public class GameManager {
      */
     private static class ExecutionShot {
         final ArmorStand camera;
+        /** Titik asal sinar. Disimpan karena mayatnya nanti roboh menjauh dari sini. */
+        final Vec3 origin;
         final float startYaw;
         final float startPitch;
         final float targetYaw;
         final float targetPitch;
 
-        ExecutionShot(ArmorStand camera,
+        ExecutionShot(ArmorStand camera, Vec3 origin,
                       float startYaw, float startPitch, float targetYaw, float targetPitch) {
             this.camera = camera;
+            this.origin = origin;
             this.startYaw = startYaw;
             this.startPitch = startPitch;
             this.targetYaw = targetYaw;
@@ -265,6 +292,9 @@ public class GameManager {
         }
 
         participants.clear();
+        // Setiap game mulai dari lantai yang bersih, termasuk kalau game sebelumnya
+        // ditinggalkan begitu saja tanpa /jack stop.
+        clearCorpses(server);
         RandomSource random = server.overworld().getRandom();
         Collections.shuffle(players, new Random(random.nextLong()));
 
@@ -293,7 +323,10 @@ public class GameManager {
 
     public void stop(MinecraftServer server, boolean announce) {
         pendingExecution.clear();
+        pendingSafe.clear();
         clearExecutionCameras(server);
+        endDebugLaser(server);
+        clearCorpses(server);
         setParticipantsInvulnerable(server, false);
         for (ServerPlayer player : onlineParticipants(server)) {
             stripUniform(player);
@@ -311,6 +344,10 @@ public class GameManager {
     // ------------------------------------------------------------------ tick
 
     public void tick(MinecraftServer server) {
+        // Di luar penjagaan isRunning() di bawah: pratinjau laser justru dipakai saat
+        // tidak ada game yang berjalan.
+        tickDebugLaser(server);
+
         if (!isRunning()) {
             return;
         }
@@ -335,7 +372,7 @@ public class GameManager {
                 resolveGuessPhase(server);
             }
         } else if (phase == GamePhase.EXECUTION) {
-            tickExecutionCameras(server);
+            tickExecutionCameras(server, timer);
             // Tembakannya jatuh di tengah fase, bukan di ujungnya: sisa waktunya
             // dipakai supaya sinar sempat memudar sebelum ronde berikutnya mulai.
             if (timer == executionFireTick) {
@@ -499,6 +536,7 @@ public class GameManager {
 
     private void resolveGuessPhase(MinecraftServer server) {
         List<ServerPlayer> wrong = new ArrayList<>();
+        List<ServerPlayer> safe = new ArrayList<>();
 
         for (ServerPlayer player : onlineParticipants(server)) {
             PlayerData data = participants.get(player.getUUID());
@@ -506,13 +544,8 @@ public class GameManager {
                 continue;
             }
             if (data.guess != null && data.guess == data.symbol) {
-                player.sendSystemMessage(Component.translatable("message.jackofhearts.guess_correct",
-                        data.symbol.getLabel()).withStyle(ChatFormatting.GREEN));
-                title(player, Component.translatable("message.jackofhearts.safe").withStyle(ChatFormatting.GREEN),
-                        data.symbol.getLabel(), 5, 40, 10);
+                safe.add(player);
             } else {
-                player.sendSystemMessage(Component.translatable("message.jackofhearts.guess_wrong",
-                        data.symbol.getLabel()).withStyle(ChatFormatting.RED));
                 wrong.add(player);
             }
         }
@@ -531,13 +564,44 @@ public class GameManager {
         }
 
         if (JackConfig.CONFIG.eliminateOnWrongGuess.get() && !wrong.isEmpty()) {
-            beginExecution(server, wrong);
+            // Hasilnya sengaja belum diumumkan ke siapa pun. Fase laser yang akan
+            // mengumumkannya, tepat saat sinarnya jatuh.
+            beginExecution(server, wrong, safe);
             return;
+        }
+
+        // Tidak ada eksekusi, jadi tidak ada yang perlu ditahan.
+        for (ServerPlayer player : safe) {
+            announceSafe(player);
+        }
+        for (ServerPlayer player : wrong) {
+            announceWrong(player);
         }
 
         if (!checkWinConditions(server, true)) {
             beginRound(server);
         }
+    }
+
+    /** Kabar selamat: simbol aslinya baru disingkap di sini. */
+    private void announceSafe(ServerPlayer player) {
+        PlayerData data = participants.get(player.getUUID());
+        if (data == null) {
+            return;
+        }
+        player.sendSystemMessage(Component.translatable("message.jackofhearts.guess_correct",
+                data.symbol.getLabel()).withStyle(ChatFormatting.GREEN));
+        title(player, Component.translatable("message.jackofhearts.safe").withStyle(ChatFormatting.GREEN),
+                data.symbol.getLabel(), 5, 40, 10);
+    }
+
+    private void announceWrong(ServerPlayer player) {
+        PlayerData data = participants.get(player.getUUID());
+        if (data == null) {
+            return;
+        }
+        player.sendSystemMessage(Component.translatable("message.jackofhearts.guess_wrong",
+                data.symbol.getLabel()).withStyle(ChatFormatting.RED));
     }
 
     // ------------------------------------------------------------------ eksekusi laser
@@ -546,20 +610,38 @@ public class GameManager {
      * Fase laser. Kematian sengaja ditunda sampai sinarnya benar-benar menembak, dan
      * ronde berikutnya baru mulai setelah seluruh fase selesai - kalau tidak, Jack
      * sudah bisa berburu sementara orang masih dieksekusi.
+     *
+     * <p>Yang tebakannya <b>benar</b> ikut masuk adegan ini, bukan dilewati. Dia
+     * mendapat kamera yang sama, terminal yang sama, dan bola energi yang mengunci ke
+     * arahnya sama persis — yang tidak dia dapat cuma tembakannya. Sampai muatannya
+     * padam, tidak ada satu pun tanda yang membedakan dia dari yang akan mati.</p>
+     *
+     * @param safe yang menebak benar; ikut ditodong tapi tidak pernah ditembak.
      */
-    private void beginExecution(MinecraftServer server, List<ServerPlayer> victims) {
+    private void beginExecution(MinecraftServer server, List<ServerPlayer> victims,
+                                List<ServerPlayer> safe) {
+        // Pratinjau memakai executionTotalTicks/executionFireTick yang sama. Kalau ada
+        // yang masih berjalan, ditutup dulu supaya hitungannya tidak saling menimpa.
+        endDebugLaser(server);
+
         phase = GamePhase.EXECUTION;
         timer = JackConfig.CONFIG.executionSeconds.get() * 20;
         executionTotalTicks = timer;
         executionFireTick = timer - LASER_CHARGE_TICKS;
 
         pendingExecution.clear();
+        pendingSafe.clear();
         clearExecutionCameras(server);
 
         for (ServerPlayer victim : victims) {
             pendingExecution.add(victim.getUUID());
-            Vec3 origin = fireLaserAt(victim, timer);
+            Vec3 origin = fireLaserAt(victim, timer, true);
             beginCinematic(victim, origin, timer);
+        }
+        for (ServerPlayer survivor : safe) {
+            pendingSafe.add(survivor.getUUID());
+            Vec3 origin = fireLaserAt(survivor, timer, false);
+            beginCinematic(survivor, origin, timer);
         }
         syncAll(server);
     }
@@ -600,7 +682,7 @@ public class GameManager {
             // ditarik dari kepala, sinarnya menukik dan langsung membentur tanah
             // sendiri, sehingga kamera selalu tertarik menempel ke korban.
             camPos = clampToWall(level, victim, lowStart, wanted);
-            pitch = pitchTowards(camPos, head);
+            pitch = CAMERA_OPEN_PITCH;
         }
 
         // Kamera yang tepat di atas kepala membuat sinar segaris dengan pandangan,
@@ -643,7 +725,7 @@ public class GameManager {
         float targetYaw = flatDistance < 1.0E-3D ? victim.getYRot() : yawTowards(head, origin);
         float targetPitch = pitchTowards(head, origin);
 
-        executionCameras.put(victim.getUUID(), new ExecutionShot(camera,
+        executionCameras.put(victim.getUUID(), new ExecutionShot(camera, origin,
                 victim.getYRot(), victim.getXRot(), targetYaw, targetPitch));
 
         // Sengaja TIDAK memakai ServerPlayer.setCamera: method itu ikut menteleport
@@ -661,12 +743,16 @@ public class GameManager {
      * Tiap tick: arahkan ulang kamera ke korbannya supaya tetap terkunci kalau dia
      * bergeser, dan putar pandangan model korban sedikit demi sedikit ke arah asal
      * laser sampai tembakan jatuh.
+     *
+     * @param remaining sisa tick adegan. Diterima sebagai parameter, bukan dibaca dari
+     *                  {@link #timer}, supaya {@code /jack debug laser} bisa memakai
+     *                  hitungannya sendiri tanpa menyentuh timer game.
      */
-    private void tickExecutionCameras(MinecraftServer server) {
+    private void tickExecutionCameras(MinecraftServer server, int remaining) {
         // Putaran pandangan selesai tepat saat laser menembak; sisa fase setelah itu
         // dibiarkan apa adanya karena korban sudah jadi penonton.
         int rotationTicks = Math.max(1, executionTotalTicks - executionFireTick);
-        float progress = Mth.clamp((executionTotalTicks - timer) / (float) rotationTicks, 0.0F, 1.0F);
+        float progress = Mth.clamp((executionTotalTicks - remaining) / (float) rotationTicks, 0.0F, 1.0F);
 
         for (Map.Entry<UUID, ExecutionShot> entry : executionCameras.entrySet()) {
             ServerPlayer victim = server.getPlayerList().getPlayer(entry.getKey());
@@ -676,7 +762,7 @@ public class GameManager {
             }
             aimYaw(shot.camera, shot.camera.position(), victim.getEyePosition());
 
-            if (timer > executionFireTick) {
+            if (remaining > executionFireTick) {
                 turnGazeTowards(victim, shot, progress);
             }
         }
@@ -772,15 +858,22 @@ public class GameManager {
         }
     }
 
-    /** Kirim sinar ke semua penonton di sekitar dan bunyikan suara penguncian. */
-    private Vec3 fireLaserAt(ServerPlayer victim, int totalTicks) {
+    /**
+     * Kirim sinar ke semua penonton di sekitar dan bunyikan suara penguncian.
+     *
+     * @param fires false berarti gertakan: terminalnya mengisi daya sampai penuh lalu
+     *             padam tanpa menembak. Suara penguncian tetap dibunyikan dan paketnya
+     *             tetap dikirim ke semua orang — kalau yang selamat dibedakan sejak
+     *             awal, penguncian laser jadi pengumuman kematian.
+     */
+    private Vec3 fireLaserAt(ServerPlayer victim, int totalTicks, boolean fires) {
         ServerLevel level = victim.serverLevel();
         // Setinggi mata: itu posisi kepala. Client tetap mengikuti entitasnya tiap
         // frame, titik ini hanya cadangan kalau entitasnya tidak termuat di sana.
         Vec3 target = victim.getEyePosition();
         Vec3 origin = laserOrigin(victim, target);
 
-        LaserPacket packet = new LaserPacket(origin, target, victim.getId(), LASER_CHARGE_TICKS, totalTicks);
+        LaserPacket packet = new LaserPacket(origin, target, victim.getId(), LASER_CHARGE_TICKS, totalTicks, fires);
         for (ServerPlayer viewer : level.players()) {
             if (viewer.position().closerThan(target, LASER_VIEW_RANGE)) {
                 ModNetwork.toPlayer(viewer, packet);
@@ -875,35 +968,222 @@ public class GameManager {
         pendingExecution.clear();
 
         for (ServerPlayer victim : hit) {
-            ServerLevel level = victim.serverLevel();
-            Vec3 at = victim.getEyePosition();
-
-            level.playSound(null, at.x, at.y, at.z,
-                    ModSounds.LASER_FIRE.get(), SoundSource.MASTER, 2.0F, 1.0F);
-            level.sendParticles(ParticleTypes.EXPLOSION, at.x, at.y, at.z, 6, 0.3D, 0.4D, 0.3D, 0.0D);
-            level.sendParticles(ParticleTypes.FLAME, at.x, at.y, at.z, 40, 0.25D, 0.4D, 0.25D, 0.06D);
+            ExecutionShot shot = executionCameras.get(victim.getUUID());
+            // Simbol aslinya disingkap tepat sebelum sinarnya jatuh, bukan saat fase
+            // tebakan berakhir.
+            announceWrong(victim);
+            strikeVictim(victim, shot == null ? null : shot.origin);
 
             broadcast(server, Component.translatable("message.jackofhearts.struck",
                     victim.getGameProfile().getName()).withStyle(ChatFormatting.RED));
-
-            // Korban laser tidak dibunuh, hanya dijadikan penonton: tidak ada layar
-            // kematian, tidak ada isi tas yang tercecer, dan tidak ada respawn yang
-            // harus ditangani. Seragamnya dilepas di sini karena LivingDeathEvent
-            // yang biasanya mengurus itu memang tidak akan terpicu.
-            stripUniform(victim);
-            victim.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
-            victim.setInvulnerable(false);
-            victim.setGameMode(GameType.SPECTATOR);
             victim.sendSystemMessage(Component.translatable("message.jackofhearts.now_spectator")
                     .withStyle(ChatFormatting.GRAY));
         }
+
+        // Detik yang sama untuk yang selamat: muatannya padam dan barulah dia tahu.
+        for (UUID uuid : pendingSafe) {
+            ServerPlayer survivor = server.getPlayerList().getPlayer(uuid);
+            if (survivor == null) {
+                continue;
+            }
+            ExecutionShot shot = executionCameras.get(uuid);
+            Vec3 at = shot != null ? shot.origin : survivor.getEyePosition();
+            // Bunyinya keluar dari terminalnya, bukan dari pemainnya: yang mati listrik
+            // memang mesinnya.
+            survivor.serverLevel().playSound(null, at.x, at.y, at.z,
+                    SoundEvents.BEACON_DEACTIVATE, SoundSource.MASTER, 1.4F, 1.6F);
+            announceSafe(survivor);
+        }
+        pendingSafe.clear();
+    }
+
+    /**
+     * Detik tumbukannya: ledakan kecil, mayat muncul, korban berpindah jadi penonton.
+     *
+     * <p>Korban laser tidak dibunuh, hanya dijadikan penonton: tidak ada layar
+     * kematian, tidak ada isi tas yang tercecer, dan tidak ada respawn yang harus
+     * ditangani. Konsekuensinya tidak ada animasi kematian vanilla yang bisa dipakai
+     * dan badannya akan hilang begitu saja dalam satu frame — itulah yang digantikan
+     * {@link CorpseEntity}. Mayatnya muncul di tick yang sama persis dengan perpindahan
+     * ke mode penonton, jadi pertukarannya tidak terlihat.</p>
+     *
+     * <p>Seragamnya dilepas di sini karena {@code LivingDeathEvent} yang biasanya
+     * mengurus itu memang tidak akan terpicu.</p>
+     */
+    private void strikeVictim(ServerPlayer victim, @Nullable Vec3 laserOrigin) {
+        ServerLevel level = victim.serverLevel();
+        Vec3 at = victim.getEyePosition();
+
+        level.playSound(null, at.x, at.y, at.z,
+                ModSounds.LASER_FIRE.get(), SoundSource.MASTER, 2.0F, 1.0F);
+        // level.sendParticles(ParticleTypes.EXPLOSION, at.x, at.y, at.z, 6, 0.3D, 0.4D, 0.3D, 0.0D);
+        // level.sendParticles(ParticleTypes.FLAME, at.x, at.y, at.z, 40, 0.25D, 0.4D, 0.25D, 0.06D);
+        Blood.spurt(level, at, laserOrigin);
+
+        // Urutannya penting: mayat dibuat lebih dulu karena isi slot armor korban
+        // disalin apa adanya. Kalau stripUniform jalan duluan, mayatnya keluar tanpa
+        // seragam.
+        spawnCorpse(victim, laserOrigin);
+
+        stripUniform(victim);
+        victim.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+        victim.setInvulnerable(false);
+        victim.setGameMode(GameType.SPECTATOR);
+    }
+
+    private void spawnCorpse(ServerPlayer victim, @Nullable Vec3 laserOrigin) {
+        ServerLevel level = victim.serverLevel();
+        CorpseEntity corpse = ModEntities.CORPSE.get().create(level);
+        if (corpse == null) {
+            return;
+        }
+        corpse.copyFrom(victim, laserOrigin);
+        level.addFreshEntity(corpse);
+    }
+
+    /** Sapu semua mayat di semua dimensi. */
+    public int clearCorpses(MinecraftServer server) {
+        int removed = 0;
+        for (ServerLevel level : server.getAllLevels()) {
+            for (CorpseEntity corpse : level.getEntities(ModEntities.CORPSE.get(), e -> true)) {
+                corpse.discard();
+                removed++;
+            }
+        }
+        return removed;
     }
 
     private void endExecution(MinecraftServer server) {
+        // Yang selamat ikut dibekukan selama adegannya, dan dia tidak lewat
+        // strikeVictim seperti korban — jadi perlambatannya dilepas di sini.
+        for (UUID uuid : executionCameras.keySet()) {
+            ServerPlayer player = server.getPlayerList().getPlayer(uuid);
+            if (player != null) {
+                player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+            }
+        }
         clearExecutionCameras(server);
         if (!checkWinConditions(server, true)) {
             beginRound(server);
         }
+    }
+
+    // ------------------------------------------------------------------ pratinjau laser
+
+    /**
+     * Sasaran pratinjau beserta mode permainannya sebelum ditembak, supaya bisa
+     * dikembalikan setelah adegannya selesai. Sengaja terpisah dari
+     * {@link #pendingExecution} agar pratinjau tidak pernah menyentuh state game.
+     */
+    private final Map<UUID, GameType> debugVictims = new LinkedHashMap<>();
+    private int debugTimer;
+    private boolean debugRunning;
+    /** false berarti pratinjau gertakan: mengisi daya lalu padam tanpa menembak. */
+    private boolean debugFires;
+
+    /**
+     * Menjalankan satu adegan eksekusi utuh di luar permainan: kamera sinematik,
+     * pandangan korban yang berputar ke arah laser, sinarnya, lalu ambruk dan mayat
+     * yang ditinggalkan.
+     *
+     * <p>Jalurnya persis sama dengan eksekusi sungguhan — memakai {@link #fireLaserAt}
+     * dan {@link #beginCinematic} yang sama — jadi arah datangnya sinar juga ditentukan
+     * dengan aturan yang sama: keluar dari Terminal Tebakan kalau ada blok penanda
+     * ruang (bawaannya beehive) di bawah kaki, kalau tidak turun lurus dari langit.
+     * Kalau jalurnya dijiplak ulang di sini, pratinjaunya bisa terlihat benar padahal
+     * yang asli sudah berubah.</p>
+     *
+     * <p>Mode permainan sasaran dikembalikan sendiri setelah adegannya selesai supaya
+     * yang menguji tidak tertinggal jadi penonton. Mayatnya sengaja dibiarkan.</p>
+     *
+     * @param fires false untuk melihat versi gertakannya — yang didapat orang yang
+     *              tebakannya benar: mengisi daya penuh lalu padam tanpa menembak.
+     * @return pesan kegagalan, atau null kalau pratinjaunya jalan.
+     */
+    @Nullable
+    public Component debugLaser(MinecraftServer server, List<ServerPlayer> targets, boolean fires) {
+        if (phase == GamePhase.EXECUTION) {
+            return Component.literal("Fase eksekusi sedang berjalan. Tunggu sampai selesai.")
+                    .withStyle(ChatFormatting.RED);
+        }
+        if (debugRunning) {
+            return Component.literal("Pratinjau laser masih berjalan.").withStyle(ChatFormatting.RED);
+        }
+
+        List<ServerPlayer> victims = new ArrayList<>(targets);
+        victims.removeIf(v -> v.gameMode.getGameModeForPlayer() == GameType.SPECTATOR);
+        if (victims.isEmpty()) {
+            return Component.literal("Tidak ada sasaran yang bisa ditembak; penonton dilewati.")
+                    .withStyle(ChatFormatting.RED);
+        }
+
+        int total = JackConfig.CONFIG.executionSeconds.get() * 20;
+        debugRunning = true;
+        debugFires = fires;
+        debugTimer = total;
+        executionTotalTicks = total;
+        executionFireTick = total - LASER_CHARGE_TICKS;
+
+        clearExecutionCameras(server);
+        debugVictims.clear();
+
+        for (ServerPlayer victim : victims) {
+            debugVictims.put(victim.getUUID(), victim.gameMode.getGameModeForPlayer());
+            Vec3 origin = fireLaserAt(victim, total, fires);
+            beginCinematic(victim, origin, total);
+        }
+        return null;
+    }
+
+    private void tickDebugLaser(MinecraftServer server) {
+        if (!debugRunning) {
+            return;
+        }
+        debugTimer--;
+        tickExecutionCameras(server, debugTimer);
+
+        if (debugTimer == executionFireTick) {
+            for (UUID uuid : debugVictims.keySet()) {
+                ServerPlayer victim = server.getPlayerList().getPlayer(uuid);
+                if (victim == null) {
+                    continue;
+                }
+                ExecutionShot shot = executionCameras.get(uuid);
+                Vec3 origin = shot == null ? null : shot.origin;
+                if (debugFires) {
+                    strikeVictim(victim, origin);
+                } else if (origin != null) {
+                    victim.serverLevel().playSound(null, origin.x, origin.y, origin.z,
+                            SoundEvents.BEACON_DEACTIVATE, SoundSource.MASTER, 1.4F, 1.6F);
+                }
+            }
+        }
+        if (debugTimer <= 0) {
+            endDebugLaser(server);
+        }
+    }
+
+    /** Lepas kamera dan kembalikan mode permainan sasaran. Mayatnya tetap ditinggal. */
+    private void endDebugLaser(MinecraftServer server) {
+        if (!debugRunning) {
+            return;
+        }
+        debugRunning = false;
+        debugTimer = 0;
+        clearExecutionCameras(server);
+
+        for (Map.Entry<UUID, GameType> entry : debugVictims.entrySet()) {
+            ServerPlayer victim = server.getPlayerList().getPlayer(entry.getKey());
+            if (victim == null) {
+                continue;
+            }
+            victim.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+            victim.setGameMode(entry.getValue());
+            victim.sendSystemMessage(Component.literal(
+                            "Pratinjau selesai. Mayatnya ditinggal di tempat; /jack debug clearcorpse untuk menyapunya.")
+                    .withStyle(ChatFormatting.GRAY));
+        }
+        debugVictims.clear();
     }
 
     // ------------------------------------------------------------------ tebakan
@@ -1039,6 +1319,7 @@ public class GameManager {
         for (ServerPlayer player : onlineParticipants(server)) {
             stripUniform(player);
         }
+        clearCorpses(server);
         syncAll(server);
     }
 

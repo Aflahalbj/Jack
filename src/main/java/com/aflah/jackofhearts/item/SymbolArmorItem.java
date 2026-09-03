@@ -2,6 +2,7 @@ package com.aflah.jackofhearts.item;
 
 import com.aflah.jackofhearts.JackOfHeartsMod;
 import com.aflah.jackofhearts.client.ClientOnlyHooks;
+import com.aflah.jackofhearts.entity.CorpseEntity;
 import com.aflah.jackofhearts.game.Symbol;
 import net.minecraft.ChatFormatting;
 import net.minecraft.nbt.CompoundTag;
@@ -58,8 +59,11 @@ public class SymbolArmorItem extends ArmorItem {
             return JackOfHeartsMod.MOD_ID + ":textures/models/armor/uniform_unknown_layer_1.png";
         }
         // Di awal tiap ronde simbol semua orang diacak ulang; selama animasinya
-        // berjalan yang ditampilkan berganti-ganti dulu sebelum menetap.
-        if (FMLEnvironment.dist == Dist.CLIENT) {
+        // berjalan yang ditampilkan berganti-ganti dulu sebelum menetap. Mayat
+        // dikecualikan: simbolnya sudah tersingkap saat dia gugur dan tidak ikut
+        // diacak lagi, jadi kalau ikut animasi ini seragamnya terlihat berkedip
+        // ganti-ganti kartu di badan yang sudah tergeletak.
+        if (FMLEnvironment.dist == Dist.CLIENT && !(entity instanceof CorpseEntity)) {
             String shuffling = ClientOnlyHooks.shufflingSymbolId();
             if (shuffling != null) {
                 return JackOfHeartsMod.MOD_ID + ":textures/models/armor/uniform_" + shuffling + "_layer_1.png";

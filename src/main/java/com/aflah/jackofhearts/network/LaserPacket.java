@@ -20,13 +20,21 @@ import java.util.function.Supplier;
  *
  * <p>Dikirim ke semua pemain di sekitar, bukan cuma korbannya, karena justru
  * penonton yang perlu melihat siapa yang dieksekusi.</p>
+ *
+ * <p>{@code fires} membedakan tembakan sungguhan dari gertakan. Yang menebak benar
+ * juga mendapat terminal yang mengisi daya ke arahnya, persis sama sampai detik
+ * terakhir — bedanya muatannya padam begitu saja tanpa pernah menembak. Tanpa
+ * gertakan ini, penguncian laser sama saja dengan pengumuman kematian: begitu
+ * sinarnya mulai mengisi, yang bersangkutan sudah tahu nasibnya.</p>
  */
-public record LaserPacket(Vec3 from, Vec3 fallback, int victimId, int chargeTicks, int totalTicks) {
+public record LaserPacket(Vec3 from, Vec3 fallback, int victimId, int chargeTicks, int totalTicks,
+                          boolean fires) {
 
     public static LaserPacket decode(FriendlyByteBuf buf) {
         Vec3 from = new Vec3(buf.readDouble(), buf.readDouble(), buf.readDouble());
         Vec3 fallback = new Vec3(buf.readDouble(), buf.readDouble(), buf.readDouble());
-        return new LaserPacket(from, fallback, buf.readVarInt(), buf.readVarInt(), buf.readVarInt());
+        return new LaserPacket(from, fallback, buf.readVarInt(), buf.readVarInt(), buf.readVarInt(),
+                buf.readBoolean());
     }
 
     public void encode(FriendlyByteBuf buf) {
@@ -39,6 +47,7 @@ public record LaserPacket(Vec3 from, Vec3 fallback, int victimId, int chargeTick
         buf.writeVarInt(victimId);
         buf.writeVarInt(chargeTicks);
         buf.writeVarInt(totalTicks);
+        buf.writeBoolean(fires);
     }
 
     public void handle(Supplier<NetworkEvent.Context> ctx) {

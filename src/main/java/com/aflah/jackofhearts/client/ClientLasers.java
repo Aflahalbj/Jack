@@ -42,6 +42,13 @@ public class ClientLasers {
     private static final float HOLD_TICKS = 3.0F;
     /** Lamanya sinar padam setelah itu. */
     private static final float FADE_TICKS = 5.0F;
+    /**
+     * Lamanya muatan padam kalau ternyata tidak menembak. Sengaja lebih pendek dari
+     * memudarnya sinar: gertakan yang berlarut-larut malah memberi waktu untuk sadar
+     * bahwa tidak ada yang datang, padahal justru kepastian mendadak itu yang bikin
+     * lega.
+     */
+    private static final float FIZZLE_TICKS = 7.0F;
 
     /**
      * Setengah lebar inti sinar saat menembak, dalam blok. Satu piksel Minecraft =
@@ -66,6 +73,7 @@ public class ClientLasers {
         final int victimId;
         final int chargeTicks;
         final int totalTicks;
+        final boolean fires;
         int age;
 
         Laser(LaserPacket packet) {
@@ -74,6 +82,7 @@ public class ClientLasers {
             this.victimId = packet.victimId();
             this.chargeTicks = packet.chargeTicks();
             this.totalTicks = packet.totalTicks();
+            this.fires = packet.fires();
         }
 
         /** Kepala korban pada frame ini; jatuh ke titik cadangan kalau entitasnya tidak ada. */
@@ -136,8 +145,10 @@ public class ClientLasers {
             float t = laser.age + partialTick;
             if (t < laser.chargeTicks) {
                 renderCharging(consumer, matrix, camera, laser, t);
-            } else {
+            } else if (laser.fires) {
                 renderShot(consumer, matrix, camera, laser, t - laser.chargeTicks, partialTick);
+            } else {
+                renderFizzle(consumer, matrix, camera, laser, t - laser.chargeTicks);
             }
         }
 
@@ -157,6 +168,31 @@ public class ClientLasers {
         }
         drawGlow(consumer, matrix, camera, laser.from, size * 1.9F, GLOW_COLOR, 0.5F * progress);
         drawGlow(consumer, matrix, camera, laser.from, size, CORE_COLOR, 0.9F * progress);
+    }
+
+    /**
+     * Muatannya padam tanpa pernah menembak — yang didapat orang yang tebakannya benar.
+     *
+     * <p>Sampai detik ini tampilannya identik dengan yang akan menembak: bola energi
+     * yang sama, di terminal yang sama, mengunci orang yang sama. Perbedaannya baru
+     * muncul di frame terakhir pengisian, dan justru di situ letak tegangannya.</p>
+     *
+     * <p>Bolanya mengempis lebih cepat daripada memudarnya — dikuadratkan sementara
+     * alpha-nya lurus. Kalau dua-duanya turun bersamaan, yang terbaca cuma gambar yang
+     * di-<i>fade</i>; dengan mengempis duluan, terbacanya daya yang ditarik kembali.</p>
+     */
+    private static void renderFizzle(VertexConsumer consumer, Matrix4f matrix, Vec3 camera,
+                                     Laser laser, float f) {
+        if (f > FIZZLE_TICKS) {
+            return;
+        }
+        float left = 1.0F - f / FIZZLE_TICKS;
+        float size = CHARGE_SIZE * left * left;
+        if (size <= 0.001F) {
+            return;
+        }
+        drawGlow(consumer, matrix, camera, laser.from, size * 1.9F, GLOW_COLOR, 0.5F * left);
+        drawGlow(consumer, matrix, camera, laser.from, size, CORE_COLOR, 0.9F * left);
     }
 
     /** Sinar meluncur dari terminal ke korban, menyala sesaat, lalu padam. */

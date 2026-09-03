@@ -75,6 +75,19 @@ public class JackCommand {
         root.then(Commands.literal("reveal").executes(JackCommand::reveal));
         root.then(Commands.literal("debugrole").executes(JackCommand::debugRole));
 
+        // Pratinjau eksekusi tanpa harus menyusun roster dan menunggu satu ronde penuh.
+        root.then(Commands.literal("debug")
+                .then(Commands.literal("laser")
+                        .executes(ctx -> debugLaser(ctx, List.of(ctx.getSource().getPlayerOrException()), true))
+                        .then(Commands.argument("targets", EntityArgument.players())
+                                .executes(ctx -> debugLaser(ctx, EntityArgument.getPlayers(ctx, "targets"), true))))
+                // Versi gertakannya: yang didapat orang yang tebakannya benar.
+                .then(Commands.literal("safe")
+                        .executes(ctx -> debugLaser(ctx, List.of(ctx.getSource().getPlayerOrException()), false))
+                        .then(Commands.argument("targets", EntityArgument.players())
+                                .executes(ctx -> debugLaser(ctx, EntityArgument.getPlayers(ctx, "targets"), false))))
+                .then(Commands.literal("clearcorpse").executes(JackCommand::clearCorpses)));
+
         dispatcher.register(root);
     }
 
@@ -117,6 +130,33 @@ public class JackCommand {
                                 + Math.min(jacks, shown) + " Jack, kamu " + role.getId().toUpperCase())
                 .withStyle(ChatFormatting.GRAY), false);
         return 1;
+    }
+
+    /**
+     * Menembakkan laser eksekusi ke sasaran di luar permainan, lengkap dengan kamera
+     * sinematik dan mayat yang ditinggalkan. Arah datangnya sinar mengikuti aturan yang
+     * sama dengan game: dari Terminal Tebakan kalau ada blok penanda ruang di bawah
+     * kaki sasaran, kalau tidak turun dari langit.
+     */
+    private static int debugLaser(CommandContext<CommandSourceStack> ctx, Collection<ServerPlayer> targets,
+                                  boolean fires) {
+        CommandSourceStack source = ctx.getSource();
+        Component error = GameManager.get().debugLaser(source.getServer(), new ArrayList<>(targets), fires);
+        if (error != null) {
+            source.sendFailure(error);
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("Pratinjau "
+                        + (fires ? "laser" : "gertakan") + ": " + targets.size() + " sasaran.")
+                .withStyle(ChatFormatting.AQUA), false);
+        return targets.size();
+    }
+
+    private static int clearCorpses(CommandContext<CommandSourceStack> ctx) {
+        int removed = GameManager.get().clearCorpses(ctx.getSource().getServer());
+        ctx.getSource().sendSuccess(() -> Component.literal(removed + " mayat disapu.")
+                .withStyle(ChatFormatting.YELLOW), true);
+        return removed;
     }
 
     private static int unregisterAll(CommandContext<CommandSourceStack> ctx) {
