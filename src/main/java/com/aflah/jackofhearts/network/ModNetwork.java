@@ -50,6 +50,18 @@ public class ModNetwork {
                 .consumerMainThread(SetCameraPacket::handle)
                 .add();
 
+        CHANNEL.messageBuilder(RosterPacket.class, nextId++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(RosterPacket::encode)
+                .decoder(RosterPacket::decode)
+                .consumerMainThread(RosterPacket::handle)
+                .add();
+
+        CHANNEL.messageBuilder(PanelOffPacket.class, nextId++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(PanelOffPacket::encode)
+                .decoder(PanelOffPacket::decode)
+                .consumerMainThread(PanelOffPacket::handle)
+                .add();
+
         CHANNEL.messageBuilder(SubmitGuessPacket.class, nextId++, NetworkDirection.PLAY_TO_SERVER)
                 .encoder(SubmitGuessPacket::encode)
                 .decoder(SubmitGuessPacket::decode)
@@ -59,5 +71,15 @@ public class ModNetwork {
 
     public static void toPlayer(ServerPlayer player, Object packet) {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), packet);
+    }
+
+    /**
+     * Ke semua pemain yang terhubung, termasuk yang bukan peserta.
+     *
+     * <p>Isi Papan Peserta memang tontonan umum — penonton dan yang sudah gugur justru
+     * yang paling butuh melihatnya.</p>
+     */
+    public static void toAll(Object packet) {
+        CHANNEL.send(PacketDistributor.ALL.noArg(), packet);
     }
 }

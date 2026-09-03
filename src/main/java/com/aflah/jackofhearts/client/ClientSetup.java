@@ -1,6 +1,7 @@
 package com.aflah.jackofhearts.client;
 
 import com.aflah.jackofhearts.JackOfHeartsMod;
+import com.aflah.jackofhearts.registry.ModBlockEntities;
 import com.aflah.jackofhearts.registry.ModEntities;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.HumanoidModel;
@@ -43,6 +44,7 @@ public class ClientSetup {
     public static void onRegisterEntityRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerEntityRenderer(ModEntities.SEAT.get(), SeatEntityRenderer::new);
         event.registerEntityRenderer(ModEntities.CORPSE.get(), CorpseRenderer::new);
+        event.registerBlockEntityRenderer(ModBlockEntities.MONITOR.get(), MonitorRenderer::new);
     }
 
     /** Dipanggil dari IClientItemExtensions saat armor dirender. */

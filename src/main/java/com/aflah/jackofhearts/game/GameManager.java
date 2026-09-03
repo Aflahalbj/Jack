@@ -1,12 +1,16 @@
 package com.aflah.jackofhearts.game;
 
 import com.aflah.jackofhearts.JackOfHeartsMod;
+import com.aflah.jackofhearts.block.MonitorBlock;
+import com.aflah.jackofhearts.blockentity.MonitorTracker;
 import com.aflah.jackofhearts.config.JackConfig;
 import com.aflah.jackofhearts.entity.Blood;
 import com.aflah.jackofhearts.entity.CorpseEntity;
 import com.aflah.jackofhearts.item.SymbolArmorItem;
 import com.aflah.jackofhearts.network.ModNetwork;
 import com.aflah.jackofhearts.network.LaserPacket;
+import com.aflah.jackofhearts.network.PanelOffPacket;
+import com.aflah.jackofhearts.network.RosterPacket;
 import com.aflah.jackofhearts.network.OpenGuessScreenPacket;
 import com.aflah.jackofhearts.network.OpenRoleRevealPacket;
 import com.aflah.jackofhearts.network.SetCameraPacket;
@@ -17,6 +21,7 @@ import com.aflah.jackofhearts.registry.ModItems;
 import com.aflah.jackofhearts.registry.ModSounds;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
@@ -55,10 +60,13 @@ import net.minecraft.world.phys.Vec3;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -292,6 +300,10 @@ public class GameManager {
         }
 
         participants.clear();
+        panelDark.clear();
+        panelQueue.clear();
+        pendingWinner = null;
+        pendingWinReason = null;
         // Setiap game mulai dari lantai yang bersih, termasuk kalau game sebelumnya
         // ditinggalkan begitu saja tanpa /jack stop.
         clearCorpses(server);
@@ -317,6 +329,7 @@ public class GameManager {
 
         broadcast(server, Component.translatable("message.jackofhearts.game_started", players.size())
                 .withStyle(ChatFormatting.GOLD));
+        syncRoster(server);
         beginReveal(server);
         return null;
     }
@@ -324,6 +337,7 @@ public class GameManager {
     public void stop(MinecraftServer server, boolean announce) {
         pendingExecution.clear();
         pendingSafe.clear();
+        endBoardView(server);
         clearExecutionCameras(server);
         endDebugLaser(server);
         clearCorpses(server);
@@ -332,6 +346,11 @@ public class GameManager {
             stripUniform(player);
         }
         participants.clear();
+        panelDark.clear();
+        panelQueue.clear();
+        pendingWinner = null;
+        pendingWinReason = null;
+        syncRoster(server);
         phase = GamePhase.IDLE;
         round = 0;
         timer = 0;
@@ -345,8 +364,12 @@ public class GameManager {
 
     public void tick(MinecraftServer server) {
         // Di luar penjagaan isRunning() di bawah: pratinjau laser justru dipakai saat
-        // tidak ada game yang berjalan.
+        // tidak ada game yang berjalan, dan padamnya panel dijadwalkan melewati batas
+        // fase.
         tickDebugLaser(server);
+        tickPanelQueue(server);
+        tickBoardView(server);
+        tickPendingWin(server);
 
         if (!isRunning()) {
             return;
@@ -554,6 +577,9 @@ public class GameManager {
         for (PlayerData data : participants.values()) {
             if (data.alive && server.getPlayerList().getPlayer(data.uuid) == null) {
                 data.alive = false;
+                // Tidak ada laser dan tidak ada adegan, jadi panelnya padam sekarang
+                // juga — jeda tiga detik itu milik eksekusi, bukan aturan umum.
+                queuePanelOff(data.uuid, 1);
                 broadcast(server, Component.translatable("message.jackofhearts.struck_offline", data.name)
                         .withStyle(ChatFormatting.RED));
             }
@@ -787,6 +813,25 @@ public class GameManager {
         victim.lookAt(EntityAnchorArgument.Anchor.EYES, eye.add(viewVector(yaw, pitch).scale(16.0D)));
     }
 
+    /**
+     * Datarkan pandangan pemain begitu lasernya jatuh, tanpa mengubah arah hadapnya.
+     *
+     * <p>Di luar ruangan sinarnya turun dari langit, jadi seluruh adegan dihabiskan
+     * dengan mendongak — itu memang yang diinginkan selama lasernya mengisi. Tapi
+     * begitu tembakannya selesai, pandangan itu tidak ada gunanya lagi: yang gugur
+     * masuk mode penonton sambil menatap langit kosong, dan yang selamat kembali ke
+     * permainan harus mencari arah sendiri lebih dulu.</p>
+     *
+     * <p>Dipakai {@code lookAt}, bukan {@code setXRot}, dengan alasan yang sama seperti
+     * di {@link #turnGazeTowards}: rotasi pemain dikendalikan client, dan nilai yang
+     * diset langsung di server akan ditimpa balik pada tick berikutnya.</p>
+     */
+    private static void levelGaze(ServerPlayer player) {
+        Vec3 eye = player.getEyePosition();
+        player.lookAt(EntityAnchorArgument.Anchor.EYES,
+                eye.add(viewVector(player.getYRot(), 0.0F).scale(16.0D)));
+    }
+
     /** Arah pandang dari sepasang sudut, memakai rumus yang sama dengan vanilla. */
     private static Vec3 viewVector(float yaw, float pitch) {
         float x = pitch * ((float) Math.PI / 180.0F);
@@ -967,8 +1012,13 @@ public class GameManager {
         }
         pendingExecution.clear();
 
-        for (ServerPlayer victim : hit) {
+        for (int i = 0; i < hit.size(); i++) {
+            ServerPlayer victim = hit.get(i);
             ExecutionShot shot = executionCameras.get(victim.getUUID());
+            // Panelnya padam satu per satu, bukan serentak. Kalau tiga orang gugur
+            // bersamaan dan papannya mati sekaligus, yang terdengar cuma satu bunyi
+            // dan tidak ada yang sempat melihat siapa saja yang hilang.
+            queuePanelOff(victim.getUUID(), PANEL_OFF_DELAY + i * PANEL_OFF_STAGGER);
             // Simbol aslinya disingkap tepat sebelum sinarnya jatuh, bukan saat fase
             // tebakan berakhir.
             announceWrong(victim);
@@ -979,6 +1029,10 @@ public class GameManager {
             victim.sendSystemMessage(Component.translatable("message.jackofhearts.now_spectator")
                     .withStyle(ChatFormatting.GRAY));
         }
+
+        // Papan baru menyala setelah semua korban ronde ini terdaftar, jadi lamanya
+        // adegan menyesuaikan berapa panel yang harus padam.
+        scheduleBoardView(server, hit.size());
 
         // Detik yang sama untuk yang selamat: muatannya padam dan barulah dia tahu.
         for (UUID uuid : pendingSafe) {
@@ -992,6 +1046,7 @@ public class GameManager {
             // memang mesinnya.
             survivor.serverLevel().playSound(null, at.x, at.y, at.z,
                     SoundEvents.BEACON_DEACTIVATE, SoundSource.MASTER, 1.4F, 1.6F);
+            levelGaze(survivor);
             announceSafe(survivor);
         }
         pendingSafe.clear();
@@ -1025,6 +1080,7 @@ public class GameManager {
         // seragam.
         spawnCorpse(victim, laserOrigin);
 
+        levelGaze(victim);
         stripUniform(victim);
         victim.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
         victim.setInvulnerable(false);
@@ -1163,6 +1219,240 @@ public class GameManager {
         }
     }
 
+    // ------------------------------------------------------------------ papan peserta
+
+    /** Peserta yang panelnya sudah padam. */
+    private final Set<UUID> panelDark = new LinkedHashSet<>();
+    /** Panel yang sudah dijadwalkan padam tapi belum sampai gilirannya. */
+    private final List<PendingPanel> panelQueue = new ArrayList<>();
+
+    /**
+     * Jeda dari tembakan sampai panelnya padam.
+     *
+     * <p>Lima detik, jadi jatuhnya jauh <b>setelah</b> fase eksekusi berakhir dan sudah
+     * masuk ronde berikutnya — fase eksekusi bawaannya cuma tiga detik dan tembakannya
+     * jatuh di tengah. Itu memang disengaja: papan padam sebagai ketukan tersendiri
+     * setelah adegannya selesai, bukan sebagai bagian dari adegannya.</p>
+     */
+    private static final int PANEL_OFF_DELAY = 100;
+    /** Jarak antar panel kalau lebih dari satu orang gugur di ronde yang sama. */
+    private static final int PANEL_OFF_STAGGER = 14;
+
+    /**
+     * Jarak kamera papan dari bidang papan.
+     *
+     * <p>Papannya 13 blok lebar. Dengan sudut pandang bawaan, jarak sembilan blok
+     * memuat seluruh bidangnya beserta sedikit pinggiran; lebih dekat dari itu ujung
+     * kiri dan kanannya terpotong. Kalau ruangannya tidak sedalam ini, kameranya
+     * dimundurkan sejauh yang muat saja.</p>
+     */
+    private static final double BOARD_VIEW_DISTANCE = 9.0D;
+    /** Kamera papan menyala sedikit sebelum panel pertama padam, jadi tidak ada yang terlewat. */
+    private static final int BOARD_VIEW_LEAD = 10;
+    /** Berapa lama kamera bertahan setelah panel terakhir padam. */
+    private static final int BOARD_VIEW_TAIL = 40;
+
+    /** Pemenang yang sudah ditentukan tapi pengumumannya menunggu papan selesai. */
+    @Nullable
+    private Role pendingWinner;
+    @Nullable
+    private Component pendingWinReason;
+
+    /** Hitung mundur sampai kamera papan menyala; 0 berarti tidak ada yang dijadwalkan. */
+    private int boardViewDelay;
+    /**
+     * Lama kamera papan akan menyala nanti, disimpan terpisah dari sisa waktunya.
+     *
+     * <p>Harus dua nilai, bukan satu. Kalau sisa waktu diisi sejak dijadwalkan, dia
+     * ikut berkurang selama masa tunggu — dan karena tunggunya lebih lama daripada
+     * tayangnya, hitungannya habis sebelum kameranya sempat menyala, lalu penutupnya
+     * menolkan jadwal yang belum jalan. Kameranya tidak pernah muncul sama sekali.</p>
+     */
+    private int boardViewDuration;
+    /** Sisa waktu kamera papan menyala; 0 berarti tidak sedang menyala. */
+    private int boardViewTicks;
+    @Nullable
+    private ArmorStand boardCamera;
+
+    private static class PendingPanel {
+        final UUID uuid;
+        int ticksLeft;
+
+        PendingPanel(UUID uuid, int ticksLeft) {
+            this.uuid = uuid;
+            this.ticksLeft = ticksLeft;
+        }
+    }
+
+    /** Jadwalkan satu panel padam. Jadwal lama untuk orang yang sama diganti. */
+    private void queuePanelOff(UUID uuid, int delayTicks) {
+        panelQueue.removeIf(pending -> pending.uuid.equals(uuid));
+        panelQueue.add(new PendingPanel(uuid, Math.max(1, delayTicks)));
+    }
+
+    /**
+     * Antrean padamnya panel berjalan di luar penjagaan fase, karena jadwalnya memang
+     * melewati batas fase: yang gugur di fase eksekusi baru padam ketika ronde
+     * berikutnya sudah dimulai.
+     */
+    private void tickPanelQueue(MinecraftServer server) {
+        if (panelQueue.isEmpty()) {
+            return;
+        }
+        boolean changed = false;
+        Iterator<PendingPanel> it = panelQueue.iterator();
+        while (it.hasNext()) {
+            PendingPanel pending = it.next();
+            if (--pending.ticksLeft > 0) {
+                continue;
+            }
+            it.remove();
+            if (panelDark.add(pending.uuid)) {
+                ModNetwork.toAll(new PanelOffPacket(pending.uuid));
+                changed = true;
+            }
+        }
+        if (changed) {
+            syncRoster(server);
+        }
+    }
+
+    /**
+     * Alihkan pandangan semua orang ke Papan Peserta setelah eksekusi, supaya mereka
+     * melihat sendiri panel siapa saja yang padam.
+     *
+     * <p>Satu entitas kamera dipakai bersama oleh semua pemain, bukan satu per orang:
+     * yang ditonton sama persis untuk semua orang, jadi tidak ada gunanya membuat dua
+     * puluh armor stand di titik yang sama.</p>
+     *
+     * <p>Kalau tidak ada papan yang termuat, tidak terjadi apa-apa sama sekali —
+     * termasuk tidak ada yang dibekukan. Membekukan semua orang untuk menonton papan
+     * yang tidak ada adalah cara paling pasti untuk merusak satu ronde penuh.</p>
+     */
+    private void scheduleBoardView(MinecraftServer server, int deaths) {
+        if (deaths <= 0) {
+            return;
+        }
+        boardViewDelay = Math.max(1, PANEL_OFF_DELAY - BOARD_VIEW_LEAD);
+        boardViewDuration = BOARD_VIEW_LEAD + deaths * PANEL_OFF_STAGGER + BOARD_VIEW_TAIL;
+    }
+
+    private void startBoardView(MinecraftServer server) {
+        // Dua adegan tidak boleh berebut kamera yang sama. Dengan executionSeconds
+        // bawaan fase eksekusi sudah selesai jauh sebelum ini, tapi kalau diperpanjang
+        // adegannya masih berjalan — dalam hal itu papan menunggu gilirannya, bukan
+        // memotong di tengah.
+        if (phase == GamePhase.EXECUTION) {
+            boardViewDelay = 1;
+            return;
+        }
+
+        List<ServerPlayer> viewers = server.getPlayerList().getPlayers();
+        if (viewers.isEmpty()) {
+            return;
+        }
+
+        ServerPlayer anchor = viewers.get(0);
+        ServerLevel level = anchor.serverLevel();
+        BlockPos monitor = MonitorTracker.nearest(level.dimension(), anchor.position());
+        if (monitor == null) {
+            return;
+        }
+
+        BlockState state = level.getBlockState(monitor);
+        if (!state.hasProperty(MonitorBlock.FACING)) {
+            return;
+        }
+        Direction facing = state.getValue(MonitorBlock.FACING);
+        Direction right = facing.getCounterClockWise();
+        Vec3 rightVec = new Vec3(right.getStepX(), 0.0D, right.getStepZ());
+        Vec3 faceVec = new Vec3(facing.getStepX(), 0.0D, facing.getStepZ());
+
+        // Titik tengah bidang papan, dihitung dari sudut kiri-bawahnya — yaitu blok
+        // pengendali itu sendiri.
+        Vec3 corner = new Vec3(monitor.getX() + 0.5D, monitor.getY(), monitor.getZ() + 0.5D)
+                .subtract(rightVec.scale(0.5D))
+                .add(faceVec.scale(0.5D));
+        Vec3 center = corner
+                .add(rightVec.scale(MonitorBlock.BOARD_WIDTH / 2.0D))
+                .add(0.0D, MonitorBlock.BOARD_HEIGHT / 2.0D, 0.0D);
+
+        Vec3 wanted = center.add(faceVec.scale(BOARD_VIEW_DISTANCE));
+        Vec3 camPos = clampToWall(level, anchor, center.add(faceVec.scale(0.5D)), wanted);
+
+        ArmorStand camera = EntityType.ARMOR_STAND.create(level);
+        if (camera == null) {
+            return;
+        }
+        // Sisa waktu baru diisi di sini, saat kameranya benar-benar jadi.
+        boardViewTicks = boardViewDuration;
+        camera.setPos(camPos.x, camPos.y, camPos.z);
+        aimAt(camera, camPos, center, pitchTowards(camPos, center));
+        camera.setInvisible(true);
+        camera.setNoGravity(true);
+        camera.setInvulnerable(true);
+        camera.setSilent(true);
+        camera.setNoBasePlate(true);
+        camera.addTag(CAMERA_TAG);
+        CompoundTag tag = camera.saveWithoutId(new CompoundTag());
+        tag.putBoolean("Marker", true);
+        camera.load(tag);
+        level.addFreshEntity(camera);
+        boardCamera = camera;
+
+        for (ServerPlayer viewer : viewers) {
+            ModNetwork.toPlayer(viewer, new SetCameraPacket(camera.getId()));
+            if (viewer.gameMode.getGameModeForPlayer() != GameType.SPECTATOR) {
+                viewer.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
+                        boardViewTicks + 20, 255, false, false, false));
+            }
+        }
+    }
+
+    private void endBoardView(MinecraftServer server) {
+        boardViewTicks = 0;
+        boardViewDelay = 0;
+        boardViewDuration = 0;
+        if (boardCamera != null) {
+            boardCamera.discard();
+            boardCamera = null;
+        }
+        for (ServerPlayer viewer : server.getPlayerList().getPlayers()) {
+            ModNetwork.toPlayer(viewer, new SetCameraPacket(-1));
+            viewer.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+        }
+    }
+
+    private void tickBoardView(MinecraftServer server) {
+        if (boardViewDelay > 0 && --boardViewDelay == 0) {
+            startBoardView(server);
+        }
+        if (boardViewTicks > 0 && --boardViewTicks == 0) {
+            endBoardView(server);
+        }
+    }
+
+    /**
+     * Kirim ulang isi papan ke semua client.
+     *
+     * <p>Sebelum permainan dimulai isinya diambil dari daftar terdaftar, jadi papannya
+     * sudah menampilkan barisan peserta sambil host menyusun roster — bukan menyala
+     * mendadak begitu permainan dimulai.</p>
+     */
+    public void syncRoster(MinecraftServer server) {
+        List<RosterPacket.Entry> entries = new ArrayList<>();
+        if (participants.isEmpty()) {
+            for (Map.Entry<UUID, String> entry : registered.entrySet()) {
+                entries.add(new RosterPacket.Entry(entry.getKey(), entry.getValue(), false));
+            }
+        } else {
+            for (PlayerData data : participants.values()) {
+                entries.add(new RosterPacket.Entry(data.uuid, data.name, panelDark.contains(data.uuid)));
+            }
+        }
+        ModNetwork.toAll(new RosterPacket(entries));
+    }
+
     /** Lepas kamera dan kembalikan mode permainan sasaran. Mayatnya tetap ditinggal. */
     private void endDebugLaser(MinecraftServer server) {
         if (!debugRunning) {
@@ -1234,6 +1524,8 @@ public class GameManager {
             return;
         }
         data.alive = false;
+        // Dibunuh pemain lain, bukan laser: tidak ada adegan yang perlu ditunggu.
+        queuePanelOff(dead.getUUID(), 1);
         stripUniform(dead);
 
         if (source.getEntity() instanceof ServerPlayer killer && !killer.getUUID().equals(dead.getUUID())) {
@@ -1292,10 +1584,48 @@ public class GameManager {
         return false;
     }
 
+    /**
+     * Permainan berakhir. Pengumumannya belum tentu sekarang.
+     *
+     * <p>Kemenangan ditentukan begitu fase eksekusi selesai, sekitar satu setengah
+     * detik setelah tembakan — sementara papan baru mulai padam di detik kelima. Kalau
+     * pemenang langsung diumumkan di situ, layar kemenangan menutupi seluruh adegan
+     * papan yang justru menjelaskan <b>kenapa</b> permainannya berakhir.</p>
+     *
+     * <p>Fasenya tetap diakhiri sekarang supaya tidak ada ronde baru yang dimulai;
+     * yang ditunda hanya pengumumannya. Antrean panel dan kamera papan berjalan di
+     * luar penjagaan fase, jadi keduanya tetap selesai sampai tuntas.</p>
+     */
     private void finish(MinecraftServer server, Role winner, Component reason) {
         phase = GamePhase.ENDED;
         timer = 0;
 
+        if (isBoardSequenceRunning()) {
+            pendingWinner = winner;
+            pendingWinReason = reason;
+            syncAll(server);
+            return;
+        }
+        announceWinner(server, winner, reason);
+    }
+
+    /** Papan masih punya panel yang harus padam, atau kameranya masih menyorot. */
+    private boolean isBoardSequenceRunning() {
+        return !panelQueue.isEmpty() || boardViewDelay > 0 || boardViewTicks > 0;
+    }
+
+    private void tickPendingWin(MinecraftServer server) {
+        if (pendingWinner == null || isBoardSequenceRunning()) {
+            return;
+        }
+        Role winner = pendingWinner;
+        Component reason = pendingWinReason;
+        pendingWinner = null;
+        pendingWinReason = null;
+        announceWinner(server, winner, reason);
+    }
+
+    private void announceWinner(MinecraftServer server, Role winner, Component reason) {
         Component header = Component.translatable("message.jackofhearts.winner", winner.getDisplayName())
                 .withStyle(ChatFormatting.GOLD);
         broadcast(server, header);
@@ -1408,6 +1738,8 @@ public class GameManager {
                     total, jacks, false));
         }
         syncPlayer(player, data);
+        // Yang baru masuk belum punya isi papan sama sekali.
+        syncRoster(player.server);
     }
 
     public void syncPlayer(ServerPlayer player, @Nullable PlayerData data) {

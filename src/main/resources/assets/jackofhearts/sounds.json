@@ -48,5 +48,15 @@
         "stream": false
       }
     ]
+  },
+  "panel_off": {
+    "category": "player",
+    "subtitle": "subtitles.jackofhearts.panel_off",
+    "sounds": [
+      {
+        "name": "jackofhearts:panel_off",
+        "stream": false
+      }
+    ]
   }
 }

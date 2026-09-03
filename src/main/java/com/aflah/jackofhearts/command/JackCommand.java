@@ -105,6 +105,9 @@ public class JackCommand {
                         .withStyle(add ? ChatFormatting.GREEN : ChatFormatting.YELLOW));
             }
         }
+        // Papan menampilkan daftar terdaftar selama game belum jalan, jadi ikut
+        // diperbarui setiap roster berubah.
+        manager.syncRoster(source.getServer());
         final int done = changed;
         final int total = manager.getRegistered().size();
         source.sendSuccess(() -> Component.translatable(add
@@ -161,6 +164,7 @@ public class JackCommand {
 
     private static int unregisterAll(CommandContext<CommandSourceStack> ctx) {
         int removed = GameManager.get().clearRegistered();
+        GameManager.get().syncRoster(ctx.getSource().getServer());
         ctx.getSource().sendSuccess(() -> Component.translatable("message.jackofhearts.unregistered_all", removed)
                 .withStyle(ChatFormatting.YELLOW), true);
         return removed;

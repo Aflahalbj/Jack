@@ -3,20 +3,13 @@ package com.aflah.jackofhearts.client;
 import com.aflah.jackofhearts.entity.CorpseEntity;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.model.geom.ModelLayers;
-import net.minecraft.client.multiplayer.ClientPacketListener;
-import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.entity.LivingEntityRenderer;
 import net.minecraft.client.renderer.entity.layers.HumanoidArmorLayer;
-import net.minecraft.client.resources.DefaultPlayerSkin;
 import net.minecraft.resources.ResourceLocation;
-
-import javax.annotation.Nullable;
-import java.util.UUID;
 
 /**
  * Menggambar mayat memakai skin pemiliknya.
@@ -86,31 +79,11 @@ public class CorpseRenderer extends LivingEntityRenderer<CorpseEntity, CorpseMod
 
     @Override
     public ResourceLocation getTextureLocation(CorpseEntity entity) {
-        PlayerInfo info = playerInfo(entity);
-        if (info != null) {
-            return info.getSkinLocation();
-        }
-        UUID owner = entity.getOwner();
-        return DefaultPlayerSkin.getDefaultSkin(owner != null ? owner : entity.getUUID());
+        return PlayerSkins.texture(entity.getOwner());
     }
 
     private static boolean isSlim(CorpseEntity entity) {
-        PlayerInfo info = playerInfo(entity);
-        if (info != null) {
-            return "slim".equals(info.getModelName());
-        }
-        UUID owner = entity.getOwner();
-        return owner != null && "slim".equals(DefaultPlayerSkin.getSkinModelName(owner));
-    }
-
-    @Nullable
-    private static PlayerInfo playerInfo(CorpseEntity entity) {
-        UUID owner = entity.getOwner();
-        if (owner == null) {
-            return null;
-        }
-        ClientPacketListener connection = Minecraft.getInstance().getConnection();
-        return connection == null ? null : connection.getPlayerInfo(owner);
+        return PlayerSkins.isSlim(entity.getOwner());
     }
 
     @Override

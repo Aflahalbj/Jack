@@ -2,6 +2,7 @@ package com.aflah.jackofhearts;
 
 import com.aflah.jackofhearts.config.JackConfig;
 import com.aflah.jackofhearts.network.ModNetwork;
+import com.aflah.jackofhearts.registry.ModBlockEntities;
 import com.aflah.jackofhearts.registry.ModBlocks;
 import com.aflah.jackofhearts.registry.ModCreativeTabs;
 import com.aflah.jackofhearts.registry.ModEntities;
@@ -26,6 +27,7 @@ public class JackOfHeartsMod {
 
         ModItems.register(modBus);
         ModBlocks.register(modBus);
+        ModBlockEntities.register(modBus);
         ModCreativeTabs.register(modBus);
         ModEntities.register(modBus);
         ModSounds.register(modBus);

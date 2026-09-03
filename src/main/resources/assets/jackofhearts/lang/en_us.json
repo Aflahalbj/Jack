@@ -1,34 +1,30 @@
 {
   "itemGroup.jackofhearts.main": "Jack of Hearts",
-
   "item.jackofhearts.uniform_shirt": "Baju Peserta",
   "item.jackofhearts.uniform_pants": "Celana Peserta",
   "block.jackofhearts.guess_block": "Terminal Tebakan",
+  "block.jackofhearts.monitor": "Papan Peserta",
+  "block.jackofhearts.monitor_frame": "Pelat Papan Peserta",
   "block.jackofhearts.sittable_quartz_stairs": "Tangga Quartz (Bisa Diduduki)",
   "block.jackofhearts.sittable_jungle_stairs": "Tangga Jungle (Bisa Diduduki)",
-
   "tooltip.jackofhearts.uniform": "Seragam permainan Jack of Hearts.",
   "tooltip.jackofhearts.uniform.hidden": "Simbol di punggung hanya terlihat oleh orang lain.",
-
   "symbol.jackofhearts.heart": "Hati",
   "symbol.jackofhearts.diamond": "Wajik",
   "symbol.jackofhearts.club": "Keriting",
   "symbol.jackofhearts.spade": "Sekop",
-
   "role.jackofhearts.jack": "JACK",
   "role.jackofhearts.ace": "ACE",
-
   "screen.jackofhearts.reveal": "Pembagian Peran",
   "screen.jackofhearts.reveal.shuffling": "Mengocok peran...",
   "screen.jackofhearts.reveal.lineup": "%s kartu di meja · %s di antaranya JACK",
   "screen.jackofhearts.reveal.capped": "(hanya %s kartu yang ditampilkan)",
-
   "subtitles.jackofhearts.card_shuffle": "Kartu dikocok",
   "subtitles.jackofhearts.card_flip": "Kartu dibalik",
   "subtitles.jackofhearts.card_deal": "Kartu dibagikan",
   "subtitles.jackofhearts.laser_charge": "Laser mengunci sasaran",
   "subtitles.jackofhearts.laser_fire": "Laser menembak",
-
+  "subtitles.jackofhearts.panel_off": "Panel peserta padam",
   "screen.jackofhearts.guess": "TEBAK SIMBOL DI PUNGGUNGMU",
   "screen.jackofhearts.guess_hint": "Pilih satu simbol, lalu tekan Simpan Tebakan.",
   "screen.jackofhearts.confirm": "Simpan Tebakan",
@@ -36,7 +32,6 @@
   "screen.jackofhearts.time_left": "Sisa waktu: %s detik",
   "screen.jackofhearts.saved": "Tersimpan: %s",
   "screen.jackofhearts.not_saved": "Belum ada tebakan tersimpan!",
-
   "hud.jackofhearts.round": "Ronde %s",
   "hud.jackofhearts.role": "Peran: %s",
   "hud.jackofhearts.round_time": "Waktu ronde: %s",
@@ -44,7 +39,6 @@
   "hud.jackofhearts.no_guess": "Belum menebak!",
   "hud.jackofhearts.saved_guess": "Tebakan: %s",
   "hud.jackofhearts.dead": "TERELIMINASI",
-
   "message.jackofhearts.registered": "%s pemain didaftarkan. Total terdaftar: %s",
   "message.jackofhearts.unregistered": "%s pemain dikeluarkan. Total terdaftar: %s",
   "message.jackofhearts.unregistered_all": "Daftar dikosongkan (%s pemain dikeluarkan).",

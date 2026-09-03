@@ -73,5 +73,6 @@ public class ClientEvents {
     public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
         ClientGameState.reset();
         ClientLasers.clear();
+        ClientRoster.reset();
     }
 }

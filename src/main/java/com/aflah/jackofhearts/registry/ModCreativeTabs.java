@@ -21,6 +21,8 @@ public class ModCreativeTabs {
                         output.accept(ModItems.UNIFORM_SHIRT.get());
                         output.accept(ModItems.UNIFORM_PANTS.get());
                         output.accept(ModBlocks.GUESS_BLOCK.get());
+                        output.accept(ModBlocks.MONITOR.get());
+                        output.accept(ModBlocks.MONITOR_FRAME.get());
                         output.accept(ModBlocks.SITTABLE_QUARTZ_STAIRS.get());
                         output.accept(ModBlocks.SITTABLE_JUNGLE_STAIRS.get());
                     })

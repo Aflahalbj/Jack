@@ -2,6 +2,8 @@
   "replace": false,
   "values": [
     "jackofhearts:guess_block",
+    "jackofhearts:monitor",
+    "jackofhearts:monitor_frame",
     "jackofhearts:sittable_quartz_stairs"
   ]
 }
