@@ -4,14 +4,17 @@ import com.aflah.jackofhearts.JackOfHeartsMod;
 import com.aflah.jackofhearts.block.GuessBlock;
 import com.aflah.jackofhearts.block.MonitorBlock;
 import com.aflah.jackofhearts.block.MonitorFrameBlock;
+import com.aflah.jackofhearts.block.PrisonDoorBlock;
 import com.aflah.jackofhearts.block.SittableStairBlock;
 import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.DoubleHighBlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.material.MapColor;
+import net.minecraft.world.level.material.PushReaction;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -80,6 +83,30 @@ public class ModBlocks {
 
     public static final RegistryObject<Item> SITTABLE_JUNGLE_STAIRS_ITEM = ModItems.ITEMS.register("sittable_jungle_stairs",
             () -> new BlockItem(SITTABLE_JUNGLE_STAIRS.get(), new Item.Properties()));
+
+    /**
+     * Pintu sel berlampu status dan bergerendel; lihat {@link PrisonDoorBlock}.
+     *
+     * <p>Sifat dasarnya disamakan dengan pintu besi vanilla (kuat, butuh beliung,
+     * hancur kalau didorong piston) kecuali dua hal: tahan ledakannya dinaikkan
+     * seperti blok mod ini yang lain, dan {@code lightLevel 4} supaya lampu status
+     * beserta gerendelnya masih terbaca di lorong yang gelap — tanda yang cuma
+     * kelihatan saat ruangannya terang tidak menandai apa pun. Suaranya tidak diatur
+     * di sini karena konstruktor DoorBlock menimpanya dengan suara BlockSetType.IRON.</p>
+     */
+    public static final RegistryObject<Block> PRISON_DOOR = BLOCKS.register("prison_door",
+            () -> new PrisonDoorBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(5.0F, 1200.0F)
+                    .lightLevel(state -> 4)
+                    .noOcclusion()
+                    .pushReaction(PushReaction.DESTROY)
+                    .requiresCorrectToolForDrops()));
+
+    // DoubleHighBlockItem, bukan BlockItem biasa: itu yang mengosongkan ruang di
+    // atas titik klik supaya separuh atas pintu punya tempat berdiri.
+    public static final RegistryObject<Item> PRISON_DOOR_ITEM = ModItems.ITEMS.register("prison_door",
+            () -> new DoubleHighBlockItem(PRISON_DOOR.get(), new Item.Properties()));
 
     public static void register(IEventBus bus) {
         BLOCKS.register(bus);

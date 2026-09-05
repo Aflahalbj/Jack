@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:block/door_top_left",
+  "render_type": "minecraft:cutout",
+  "textures": {
+    "top": "jackofhearts:block/prison_door_top_locked"
+  }
+}

@@ -95,7 +95,21 @@ animasinya sendiri butuh 7,2 detik sampai kartunya selesai membalik.
    tidak ada layar kematian, tidak ada isi tas yang tercecer, tidak ada respawn.
    Sinarnya keluar dari Terminal Tebakan kalau korban berdiri di lantai penanda
    ruang tebak (`roomMarkerBlock`, default beehive, dicek sampai 4 blok ke bawah);
-   selain itu turun lurus dari langit. Selama ditembak, pandangan korban dipindah
+   selain itu turun lurus dari langit.
+
+   Terminal yang dipakai adalah yang terakhir diklik korban. Kalau dia belum pernah
+   mengklik satu pun — misalnya lewat `/jack debug laser` — ruangannya **ditelusuri
+   seperti orang berjalan**: petak demi petak lewat ruang yang bisa dilalui, sampai
+   ketemu terminal terdekat yang benar-benar bisa dicapai dari tempatnya berdiri.
+   Tembok menghentikan penelusuran, begitu juga pintu sel yang sedang tertutup.
+
+   Terdekat saja tidak cukup, karena jarak lurus menembus tembok: terminal di kamar
+   sebelah sering lebih dekat daripada terminal di kamar yang sedang ditempati, dan
+   lasernya akan keluar dari kamar orang lain. Garis pandang juga tidak cukup — ia
+   lolos lewat pintu yang kebetulan sedang terbuka. Penelusurannya dibatasi
+   `ROOM_FLOOD_LIMIT` (4096 petak) supaya ruangan terbuka atau langit-langit yang
+   bolong tidak membuatnya melebar ke seluruh peta; kalau tidak ketemu sama sekali,
+   barulah dipakai yang terdekat apa adanya. Selama ditembak, pandangan korban dipindah
    ke kamera sinematik supaya dia menonton dirinya sendiri dieksekusi.
 
 ### Kamera eksekusi
@@ -121,6 +135,28 @@ mana pun:
   > Raycast pembatas temboknya di mode ini ditarik **mendatar** di ketinggian kamera,
   > bukan dari kepala korban. Kalau ditarik dari kepala, sinarnya menukik ke bawah dan
   > langsung membentur tanah sendiri, sehingga kamera selalu tertarik menempel ke korban.
+
+### Akhir ronde: adegan laser lalu papan peserta
+
+**Setiap** ronde masuk fase eksekusi, termasuk ronde yang tidak memakan korban sama
+sekali. Yang menebak benar tetap melihat lasernya mengisi daya lalu padam — gertakan
+yang sama persis dengan `/jack debug safe`. Ini bukan hiasan: kalau adegannya cuma
+muncul saat ada yang mati, adegan itu sendiri sudah membocorkan hasilnya sebelum
+sinarnya jatuh.
+
+Sesudah itu kamera semua orang berpindah ke depan **Papan Peserta**, juga di ronde
+tanpa korban — dengan alasan yang sama, papan yang cuma muncul kalau ada yang mati
+jadi kabar buruk hanya dengan muncul.
+
+Jedanya dihitung dari **adegan yang paling lama selesai, lalu ditambah 5 detik**. Ada
+dua adegan yang jalan bersamaan dan panjangnya beda: sinarnya sendiri baru habis
+memudar 30 tick setelah jatuh (berlaku juga untuk yang gertakan dan yang turun dari
+langit), sementara korban yang ambruk butuh 30 tick (`CorpseEntity.ANIM_TICKS`). Ronde
+tanpa korban tidak punya adegan ambruk, jadi yang dihitung cuma sinarnya.
+
+Panel peserta baru **padam setelah kameranya sampai** di depan papan, bukan sebelumnya
+— panel yang padam saat tidak ada yang menonton sama saja tidak padam. Ronde tanpa
+korban tentu saja tidak memadamkan panel siapa pun.
 
 ### Pandangan korban ikut menoleh
 
@@ -206,9 +242,11 @@ melihat kartu `?` sepanjang waktu.
    untuk membuka GUI pilihan simbol. **Muka bergambar simbolnya otomatis menghadap
    ke arahmu saat dipasang** — persis seperti furnace atau dispenser vanilla, jadi
    tidak perlu diputar manual dengan tangan.
-3. (Opsional) Berdiri di titik spawn ruangan lalu jalankan `/jack setroom`, dan set
-   `teleportToGuessRoom = true` di config supaya semua pemain otomatis diteleport
-   ke ruangan saat fase menebak dimulai.
+3. Pasang **lantai penanda** di ruang tebak: blok `roomMarkerBlock` (bawaannya
+   `minecraft:beehive`) di bawah lantai yang diinjak pemain, sampai 4 blok ke bawah
+   masih terbaca. Lantai ini satu-satunya cara mod ini mengenali batas ruangan —
+   dipakai laser untuk memutuskan sinarnya keluar dari terminal atau dari langit,
+   **dan** dipakai Pintu Sel untuk tahu ruangannya masih terisi atau tidak.
 
 ---
 
@@ -239,6 +277,324 @@ yang selamat dari restart server cuma jadi sampah entitas.
 
 ---
 
+## Pintu Sel
+
+`jackofhearts:prison_door` — pintu baja dua blok tinggi dengan **celah intip
+berjeruji setinggi mata**, seperti pintu ruang tahanan di permainan Jack of Hearts.
+Ambil dari creative tab *Jack of Hearts* atau `/give @s jackofhearts:prison_door`.
+Dipasang dan dihancurkan persis seperti pintu besi vanilla (butuh beliung, yang
+menjatuhkan item cuma separuh bawahnya).
+
+Celah intipnya **lubang sungguhan**, bukan gambar lubang: piksel di situ beralpha
+nol dan modelnya digambar di layer `cutout`, jadi dari luar kamu benar-benar
+melihat isi sel lewat celah itu — termasuk pemain yang bergerak di baliknya.
+
+### Dua modenya
+
+| | Terkunci | Tidak terkunci |
+|---|---|---|
+| Kapan | **cuma** kalau ada yang mati di dalam kamarnya | selalu, selain itu |
+| Lampu status (separuh atas) | **merah** | **hijau** |
+| Gerendel (separuh bawah) | terlempar penuh, menembus kusen | ditarik masuk, ceruknya kosong |
+| Klik kanan | cuma bunyi gerendel + pesan di action bar | pintu membuka/menutup |
+| Sinyal redstone | diabaikan | membuka pintu seperti pintu besi biasa |
+
+Tandanya sengaja dua jenis yang berbeda, bukan cuma beda warna: lampu terbaca dari
+jauh dalam sekejap, gerendel terbaca dari dekat dan tetap jelas untuk pemain yang
+tidak bisa membedakan merah dengan hijau. Blok ini juga menyala tipis
+(`lightLevel 4`) supaya kedua tanda itu masih kebaca di lorong gelap — tanda yang
+cuma kelihatan saat ruangannya terang tidak menandai apa pun.
+
+### Kapan pintunya terkunci
+
+Cuma satu hal yang mengunci Pintu Sel: **ada yang masuk selagi fase menebak berjalan**.
+Pintu yang dia lewati membanting menutup dan mengunci di belakangnya; pintu lain tidak
+ikut-ikutan.
+
+Kuncinya lepas sendiri **begitu fase menebak berakhir** — semua pintu, tanpa syarat,
+tanpa menunggu siapa pun keluar. Di luar itu Pintu Sel tidak pernah terkunci: tidak
+saat ronde berjalan, tidak saat eksekusi, tidak saat tidak ada game, dan tidak juga
+kalau ada yang mati di dalamnya.
+
+> Karena kuncinya selalu dilepas di pergantian fase berikutnya, **tidak ada seorang pun
+> yang bisa terkurung lebih lama dari satu fase menebak**. Rancangan-rancangan
+> sebelumnya menahan kunci sampai ruangannya kosong, sampai penghuninya keluar sendiri,
+> atau selamanya kalau ada yang mati di dalam — dan semuanya berujung pemain terjebak
+> lebih lama dari yang pernah dimaksudkan aturan permainan.
+
+Membantingnya diberi jeda 6 tick (0,3 detik) supaya pemainnya sempat masuk sepenuhnya
+dulu — pintu yang menutup di tick yang sama dengan langkahnya akan menutup di badan
+orangnya, bukan di belakangnya. Kalau fase menebak keburu berakhir dalam jeda itu,
+penguncian dibatalkan.
+
+Satu jebakan yang sudah pernah menggigit dan sekarang dijaga: **badan pemain menyentuh
+kedua separuh pintu**, jadi `entityInside` dipanggil dua kali di tick yang sama.
+Penjagaannya dipusatkan ke separuh bawah — satu titik untuk satu pintu.
+
+### Cara pintunya ditemukan mesin game
+
+Mengunci "semua pintu sel" berarti server harus tahu di mana pintunya. Server tidak
+punya cara murah untuk mencari satu blok di dunia yang tak terbatas, jadi pintunya
+yang mencatatkan diri (`PrisonDoorTracker`) — saat dipasang, **dan** saat chunk-nya
+dimuat. Pencatatan lewat chunk itu perlu: pintu yang sudah berdiri sejak sebelum
+server menyala tidak pernah lewat jalur pemasangan. Pemindaian chunk-nya membaca
+palet section lebih dulu (`maybeHas`), jadi chunk yang tidak punya pintu tidak
+pernah benar-benar ditelusuri per blok.
+
+### Perilaku kecil yang mungkin bikin bingung
+
+- Saat terkunci, arus redstone tetap dicatat walau tidak membuka pintu. Begitu fase
+  menebak berakhir selagi arusnya masih menyala, pintunya **langsung membuka**.
+- **Kedua separuh pintu selalu ditulis berbarengan** — buka/tutup, kunci, maupun
+  status redstone. Vanilla cuma mengubah blok yang disentuh lalu mengandalkan
+  rambatan `updateShape` untuk menyamakan separuh satunya; di sini keduanya ditulis
+  langsung (`writeBothHalves`), jadi tidak mungkin ada separuh yang tertinggal.
+  Efek sampingnya berguna: pintu yang separuhnya terlanjur berbeda memperbaiki
+  dirinya sendiri begitu diklik sekali.
+
+### Kalau mau mengubah tampilannya
+
+Tekstur, model, dan blockstate-nya dibangkitkan skrip, bukan digambar/diketik satu
+per satu — 64 varian blockstate dan 16 berkas model terlalu banyak untuk ditulis
+tangan. PNG dan JSON hasilnya tetap yang di-commit; skripnya cuma supaya perubahan
+berikutnya tidak mulai dari nol:
+
+Satu hal yang penting kalau mau menggambar ulang teksturnya: **daun pintunya
+digambar utuh sebagai satu kanvas 16x32, baru dipotong dua di akhir**. Menggambar
+dua tekstur 16x16 terpisah bikin tiap separuh punya bingkai atas-bawahnya sendiri,
+dan di dunia hasilnya terbaca sebagai dua panel setinggi satu blok yang kebetulan
+ditumpuk — mirip trapdoor, bukan satu pintu. Di kanvas utuh, garis sambungnya tidak
+pernah ada sejak awal, dan tiga hal sengaja melintasinya: engsel tengah, pegangan
+tarik, dan guratan bajanya sendiri.
+
+```bash
+python tools/gen_prison_door_textures.py             # 4 tekstur blok + 1 tekstur item
+python tools/gen_prison_door_textures.py "" prev.png # + pratinjau besar buat dilihat
+python tools/gen_prison_door_models.py               # 16 model + blockstate + model item
+```
+
+---
+
+## Kafetaria
+
+Mekanik bertahan hidup kedua di samping tebak simbol: **lapar**. Selama game berjalan
+pemain jadi lapar tiga kali lebih cepat daripada vanilla, dan satu-satunya sumber
+makanan adalah meja kafetaria yang stoknya terbatas dan tidak tumbuh sendiri.
+
+Makanan 3D-nya datang dari mod
+[TW's Decorative Food](https://www.curseforge.com/minecraft/mc-mods/decorative-food).
+Mod itu **tidak** jadi dependency compile — mod ini cuma membaca dunia.
+
+### Tidak ada yang perlu disiapkan
+
+Taruh makanannya di meja, selesai. Tidak ada perintah, tidak ada blok penanda yang
+harus dipasang. Yang perlu benar cuma satu: **kotak koordinat mejanya di config**
+(`areaFrom` / `areaTo`, bawaannya `-4 1 -44` sampai `1 1 -45` = 12 petak).
+
+Penataan mejanya dipotret sendiri: selama tidak ada game berjalan, isi kotak itu
+dibaca tiap 2 detik dan disimpan ke dunia. Apa pun yang kamu tata di meja di luar game
+otomatis jadi penataan resminya — termasuk arah hadap tiap piring dan tinggi
+tumpukannya.
+
+Potret itu perlu karena permainan ini **menghapus** piring dari meja. Tiap
+`/jack start` mejanya dipasang lagi dari potret, dan begitu game selesai mejanya
+dipulihkan lagi — jadi map tidak pernah perlu ditata ulang dengan tangan. Urutan
+"pulihkan dulu, baru potret lagi" itu penting: kalau dibalik, meja yang setengah kosong
+justru yang akan tersimpan sebagai penataan resmi. Alasan yang sama bikin mejanya juga
+dipulihkan saat server menyala — server yang mati di tengah game meninggalkan meja
+setengah kosong.
+
+### Kenapa batasannya kotak koordinat, bukan nama mod
+
+Decorative Food mendaftarkan blok makanannya memakai **id vanilla** —
+`minecraft:bread`, `minecraft:cooked_beef`, `minecraft:apple`, dan seterusnya. Registry
+blok dan registry item memang terpisah, jadi id yang sama tidak bentrok; itu yang bikin
+mod itu hampir tidak pernah bentrok dengan mod lain.
+
+Akibatnya buat mod ini: **tidak ada nama mod yang bisa dipakai menyaring** mana piring
+kafetaria dan mana bukan. Menyaring lewat nama blok juga tidak bisa — `minecraft:carrot`
+di meja dan ladang wortel di seberang map tidak bisa dibedakan dari namanya. Karena itu
+batasannya kotak koordinat: **di luar kotak, mod ini tidak menyentuh blok apa pun.**
+
+Di dalam kotak, yang dianggap piring cuma blok yang id-nya punya item bisa dimakan —
+jadi meja, lantai, dan taplaknya tetap tidak terhitung. Pemetaan makanannya pun jadi
+sesederhana mungkin: blok `minecraft:cooked_beef` membagikan item
+`minecraft:cooked_beef`.
+
+### Stok: 12 piring, puluhan porsi
+
+Di meja cuma ada 12 piring, tapi stok satu game jauh lebih banyak dari itu. Selisihnya
+disimpan sebagai **angka**, bukan sebagai blok — papan melayang di atas meja
+menunjukkan `sisa/total`, misalnya `48/48`.
+
+| Stok | Yang terjadi saat diklik kanan |
+|---|---|
+| Lebih banyak dari isi meja | Angka turun (`48/48` → `47/48`), makanan masuk tas, **meja tetap penuh** |
+| Sudah sama dengan isi meja | Angka turun **dan** piring yang diklik benar-benar berkurang satu porsi |
+| Nol | Tidak ada yang keluar; papannya berubah jadi `KAFETARIA KOSONG` |
+
+Ditolak juga kalau pemainnya **masih membawa makanan** — lihat bagian berikutnya.
+
+Aturannya satu kalimat: **porsi di meja selalu `min(stok, isi meja saat ditata)`**.
+Semua jalur — mengambil, isi ulang tiap ronde, memulai game — berakhir dengan
+menegakkan aturan itu, jadi isi meja dan angka di papan tidak pernah bisa bercerita hal
+yang berbeda.
+
+Satu piring Decorative Food bisa **bertumpuk** (apel maksimal 5, kue 7, daging sapi
+matang 3, ayam matang 1), dan jumlahnya disimpan di properti blockstate
+`number_of_food`. Tumpukan itu ikut dihitung: piring berisi 3 daging = 3 porsi, dan
+tiap pengambilan mengurangi tumpukannya satu-satu sebelum piringnya hilang. Jadi 12
+piring berisi satu-satu = 12 porsi, persis seperti yang terlihat.
+
+Selama game berjalan piring kafetaria juga **tidak bisa dipukul habis**. Tanpa itu
+seluruh mekanik stok bisa dilewati: pukul piringnya, makanannya jatuh sebagai drop, dan
+angka di papan tidak pernah bergerak.
+
+### Satu porsi per orang
+
+Pemain cuma boleh membawa **satu** makanan kafetaria (`foodCarryLimit`). Selama porsi
+itu masih di tasnya, klik kanan di meja tidak mengeluarkan apa-apa — habiskan dulu,
+baru boleh ambil lagi.
+
+Batas ini yang membuat kafetarianya jadi tempat, bukan sekadar peti harta. Tanpa
+batasnya, orang pertama yang sampai menyapu seluruh meja dalam sekali datang, pulang
+membawa 20 porsi, dan sisa pemain kelaparan tanpa pernah punya kesempatan — sekali
+datang, mekaniknya selesai.
+
+Yang dihitung seluruh isi tas, bukan cuma tangan, termasuk makanan yang sudah
+didaftarkan ulang Decorative Food dengan akhiran `_de`.
+
+Penolakannya dijalankan di **client dan server**, bukan cuma server. Client menebak
+sendiri hasil klik kanan sebelum server menjawab, dan tebakannya dijalankan lewat
+`use()` milik mod makanan — yang memindahkan makanan dari tangan ke tumpukan. Kalau
+server cuma diam karena menolak, tidak ada satu pun paket yang membantah tebakan itu,
+dan di layar barangnya hilang dari tas *sekaligus* dari meja padahal di server tidak
+terjadi apa pun. Karena itu kotak kafetarianya ikut dikirim ke client lewat paket (bukan
+dibaca dari config client — config COMMON di server terpisah adalah berkas milik client
+sendiri yang isinya belum tentu sama), dan setiap penolakan di server tetap memaksa
+kirim ulang isi tas serta blok yang diklik.
+
+### Dua kenop yang gampang ketuker
+
+Ini yang paling sering salah disetel, jadi ditulis duluan:
+
+| Kenop | Yang diaturnya |
+|---|---|
+| `foodNutrition` | **Seberapa sering** satu pemain harus berjalan ke kafetaria |
+| `foodBase` / `foodPerPlayer` | **Apakah makanannya habis** sebelum permainan selesai |
+
+Mengecilkan `foodNutrition` **tidak** membuat makanan lebih langka. Porsi yang lebih
+kecil berarti tiap orang butuh lebih banyak porsi, jadi stok yang sama habis lebih
+cepat — dan begitu stoknya dinaikkan untuk mengimbangi, garis waktu habisnya kembali
+persis sama. Yang berubah cuma satu: jumlah klik. Setelan `nutrition 4 + stok 72` dan
+`nutrition 8 + stok 36` sama-sama habis di ronde 5–6; yang pertama menyuruh orang bolak-
+balik dua kali lebih sering untuk hasil akhir yang identik.
+
+Jadi: setel `foodNutrition` sampai ritmenya enak, baru setel stok sampai habisnya di
+ronde yang kamu mau.
+
+### Berapa porsi untuk berapa pemain
+
+Stok satu game = `foodBase + foodPerPlayer × jumlah pemain`, bawaannya `4 + 5 × n`:
+
+| Pemain | Stok | Kira-kira habis di |
+|---|---|---|
+| 4 | 24 | ronde ~6 |
+| 8 | 44 | ronde ~5 |
+| 12 | 64 | ronde ~5 |
+| 16 | 84 | ronde ~5 |
+
+Jalan hitungnya, biar gampang disetel ulang:
+
+1. Satu porsi = `foodNutrition` 6 lapar + `foodSaturation` 0,8 → 6 + 6×0,8×2 = **15,6
+   poin**. Tiap 1 poin dibayar 4 exhaustion, jadi satu porsi menutup **62,4 exhaustion**.
+2. Pemain diam membakar `hungerIdleDrain` 0,07 × `hungerMultiplier` 3,0 = **0,21
+   exhaustion/detik**. Untuk permainan sosial di map penjara — banyak jalan dan
+   mengobrol, sprint cuma saat panik — realistisnya sekitar **0,34/detik**. (Sprint itu
+   sendiri 1,68/detik selagi berlari, tapi porsi waktunya kecil.)
+3. Jadi satu porsi bertahan **~5 menit kalau diam**, **~3 menit kalau main aktif** →
+   **satu sampai dua kali datang per ronde 5 menit**.
+4. Tiap ronde ada yang kena laser, jadi jumlah pemain menyusut. Untuk 8 pemain dengan
+   penyusutan wajar, kebutuhan menumpuk jadi ±13 porsi di ronde 1, ±24 sampai ronde 2,
+   ±33 sampai ronde 3, ±44 sampai ronde 5. Stok 44 habis di sekitar situ.
+
+Habis sebelum permainan selesai itu **memang maunya**: kelangkaan makanan adalah
+tekanannya, dan ronde-ronde terakhir dijalani dengan perut kosong. Kalau mau
+kafetarianya bertahan sampai ronde 10, naikkan `foodPerPlayer` ke sekitar 8.
+
+Perlu diingat permainannya jarang benar-benar sampai ronde 10: begitu semua Ace mati
+atau Jack mati, permainannya selesai. Realistisnya **5–7 ronde ≈ 25–35 menit**, dan
+angka di atas dihitung untuk itu.
+
+> **Kalau ronde dipotong lebih cepat** (skip, atau `roundSeconds` lebih kecil), stok yang
+> sama otomatis menutup lebih banyak ronde — hitungannya berbasis menit, bukan ronde.
+> Sebaliknya, kalau `roundSeconds` masih 600 (10 menit per ronde) permainannya dua kali
+> lebih panjang: kalikan dua `foodPerPlayer`.
+
+Jumlah pemain yang dipakai adalah pemain yang **benar-benar ikut** saat `/jack start`,
+bukan jumlah yang terdaftar — yang sedang offline tidak makan.
+
+### Semua makanan bernilai sama
+
+Ke-12 makanan kafetaria (roti, sweet berry, kentang bakar, apel, semangka, wortel, bit,
+kue, ayam/salmon/kod/daging sapi matang) disamakan nilainya: **6 lapar, saturasi ×0,8**
+— tiga paha ayam di HUD, di antara roti dan ayam matang.
+
+Angkanya dipilih dari ritmenya, bukan dari rasa: satu porsi harus cukup untuk sekitar
+satu ronde, tidak lebih. Lebih besar dari ini, kafetarianya cuma didatangi sekali lalu
+dilupakan; lebih kecil, ronde-nya habis buat bolak-balik ambil makan.
+
+Alasannya bukan kerapian angka. Di vanilla satu bit mengisi 1 lapar sedangkan satu
+daging sapi matang mengisi 8. Kalau dibiarkan, yang menentukan siapa bertahan lama
+bukan permainannya, melainkan piring mana yang kebetulan paling dekat dengan tempat
+duduknya.
+
+Yang diubah adalah item vanillanya langsung, jadi roti dari mana pun asalnya bernilai
+sama — tidak ada celah "bawa bekal sendiri lebih untung". Satu detail yang mudah
+terlewat: Decorative Food **mengganti item vanillanya** (item asli didaftarkan ulang
+jadi `<id>_de`, id lamanya diisi item milik mod itu supaya makanan bisa ditaruh sebagai
+blok), jadi "item roti" bisa berarti dua benda berbeda dan **dua-duanya** ikut
+disamakan. Matikan lewat `uniformFood` kalau tidak mau.
+
+### Lapar yang dipercepat
+
+`hungerMultiplier` (bawaan 3.0) mengalikan **exhaustion** yang didapat pemain dari
+kegiatannya sendiri: berlari, melompat, memukul, menyembuhkan diri. Hasilnya persis
+"tiga kali lebih cepat lapar daripada vanilla" untuk semua sumber sekaligus.
+
+Tapi pengali saja tidak cukup, dan ini yang gampang terlewat: **di vanilla berjalan
+biasa memakan exhaustion nol**. Tiga kali nol tetap nol, jadi pemain yang cuma berjalan
+menyusuri lorong dan mengobrol tidak akan pernah lapar — dan kafetarianya tidak akan
+pernah didatangi siapa pun. Karena itu ada `hungerIdleDrain`: tetesan tetap per detik
+yang ikut dikali juga. Bawaannya 0,07 × 3,0 = 0,21/detik, artinya batang lapar penuh
+habis sekitar 6,3 menit walau pemainnya cuma berdiri diam.
+
+Inilah satu-satunya angka yang menentukan cepat-lambatnya lapar buat pemain yang cuma
+jalan dan mengobrol — buat mereka sumber lapar yang lain hampir nol. Terlalu sering
+bolak-balik ke kafetaria? Turunkan ke 0,05. Masih terasa lambat? Naikkan ke 0,09.
+
+Lapar yang dipercepat cuma berlaku untuk **peserta yang masih hidup**, dan tidak
+berjalan selama fase reveal — layarnya mengunci input pemain, dan membuat orang yang
+tidak bisa bergerak jadi lapar bukan tantangan, cuma pajak.
+
+### Papan angkanya
+
+Papan `48/48` di atas meja **digambar client**, bukan entitas teks di dunia. Angkanya
+berubah tiap kali ada yang mengambil makanan, dan entitas teks berarti ada benda
+sungguhan yang harus dijaga tetap hidup, ikut tersimpan ke dunia, dan tertinggal di map
+kalau server mati di tengah game.
+
+Letaknya di tengah kotak kafetaria, melayang 1,4 blok di atas petak teratas — dihitung
+dari kotak di config, bukan dari piring yang tersisa. Kalau ikut piring, papannya akan
+merayap pelan-pelan mengikuti sisa piring terakhir sepanjang permainan.
+
+Papannya sengaja **tidak tembus tembok**, dan cuma terlihat sampai 48 blok. Papan ini
+perabot kafetaria, bukan penunjuk arah: kalau tembus tembok, satu angka melayang di
+seberang map jadi memberi tahu semua orang di mana kafetarianya — termasuk Jack yang
+sedang mencari mangsa.
+
+---
+
 ## Perintah (butuh permission level 2 / OP)
 
 | Perintah | Fungsi |
@@ -254,8 +610,8 @@ yang selamat dari restart server cuma jadi sampah entitas.
 | `/jack stop` | Hentikan game, lepas semua seragam |
 | `/jack status` | Fase, ronde, sisa waktu, dan daftar peserta + status hidup/mati |
 | `/jack skip` | Percepat fase yang sedang berjalan (buat testing) |
+| `/jack debug true\|false [<targets>]` | Tebakan sasaran dinilai **benar** untuk **ronde yang sedang berjalan saja** (buat testing); tanpa target = dirimu sendiri |
 | `/jack shuffle <pemain> [<jack>] [as_jack\|as_ace]` | Putar animasi kartu untuk preview, tanpa memulai game |
-| `/jack setroom` | Simpan posisimu sekarang sebagai titik ruang tebak |
 | `/jack reveal` | Tampilkan peran + simbol semua peserta, hanya ke kamu (host) |
 | `/jack debugrole` | Daftar peran semua peserta dikelompokkan per peran, tanpa simbol |
 
@@ -626,8 +982,26 @@ Untuk mod ini cara itu memang lebih cocok, karena butuh minimal 2 pemain.
 | `jackCount` | 1 | Berapa pemain yang jadi Jack |
 | `reshuffleSymbolsEachRound` | true | Acak ulang simbol tiap ronde |
 | `lockFirstPerson` | true | Kunci kamera first person |
-| `teleportToGuessRoom` | false | Teleport otomatis ke ruang tebak (butuh `/jack setroom`) |
 | `eliminateOnWrongGuess` | true | Salah tebak = laser + jadi spectator |
+
+Bagian `[cafeteria]`:
+
+| Opsi | Default | Arti |
+|---|---|---|
+| `hungerMultiplier` | 3.0 | Pengali kecepatan lapar selama game berjalan |
+| `hungerIdleDrain` | 0.07 | Exhaustion/detik untuk pemain diam, sebelum dikali; tanpa ini yang cuma jalan-jalan tidak pernah lapar |
+| `resetHungerOnStart` | true | Kenyangkan semua peserta saat game dimulai |
+| `uniformFood` | true | Samakan nilai gizi ke-12 makanan kafetaria |
+| `foodNutrition` | 6 | Isi lapar tiap porsi; kenop **frekuensi** bolak-balik |
+| `foodSaturation` | 0.8 | Pengali saturasi tiap porsi |
+| `foodBase` | 4 | Bagian tetap dari stok satu game |
+| `foodPerPlayer` | 5 | Tambahan stok per pemain; kenop **kelangkaan**, kalikan dua kalau `roundSeconds` 600 |
+| `foodTotalOverride` | 0 | Kalau > 0, stok dipaksa ke angka ini dan rumusnya diabaikan |
+| `foodRefillPerRound` | 0 | Stok yang ditambahkan tiap ronde baru; 0 = sekali habis, habis |
+| `foodCarryLimit` | 1 | Maksimal porsi yang boleh dibawa satu pemain; 0 = tanpa batas |
+| `areaDimension` | minecraft:overworld | Dimensi meja kafetaria |
+| `areaFrom` | -4 1 -44 | Sudut pertama kotak meja, `"x y z"` |
+| `areaTo` | 1 1 -45 | Sudut kedua kotak meja, `"x y z"` |
 
 ---
 
@@ -636,7 +1010,10 @@ Untuk mod ini cara itu memang lebih cocok, karena butuh minimal 2 pemain.
 ```
 game/       GameManager (mesin state), Role, Symbol, GamePhase, PlayerData, ServerEvents
 item/       SymbolArmorItem (baju/celana + NBT simbol), JackArmorMaterial
-block/      GuessBlock (klik kanan -> GUI)
+block/      GuessBlock (klik kanan -> GUI), PrisonDoorBlock + PrisonDoorTracker (pintu sel)
+cafeteria/  Cafeteria (kotak meja, stok, isi meja), CafeteriaLayout (potret meja, tersimpan ke dunia),
+            CafeteriaFood (pengenal piring + peta blok -> makanan),
+            FoodBalance (nilai gizi disamakan), HungerRules (lapar dipercepat)
 client/     SymbolArmorModel, ClientSetup, GuessScreen, RoleRevealScreen,
             JackHudOverlay, ClientEvents (kunci kamera), ClientGameState, ClientOnlyHooks
 network/    SyncStatePacket, OpenGuessScreenPacket, OpenRoleRevealPacket,

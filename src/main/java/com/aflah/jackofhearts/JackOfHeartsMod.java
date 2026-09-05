@@ -1,5 +1,6 @@
 package com.aflah.jackofhearts;
 
+import com.aflah.jackofhearts.cafeteria.FoodBalance;
 import com.aflah.jackofhearts.config.JackConfig;
 import com.aflah.jackofhearts.network.ModNetwork;
 import com.aflah.jackofhearts.registry.ModBlockEntities;
@@ -13,6 +14,7 @@ import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.config.ModConfig;
+import net.minecraftforge.fml.event.config.ModConfigEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.slf4j.Logger;
@@ -33,11 +35,22 @@ public class JackOfHeartsMod {
         ModSounds.register(modBus);
 
         modBus.addListener(this::commonSetup);
+        modBus.addListener(this::onConfigReload);
 
         ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, JackConfig.SPEC);
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {
         event.enqueueWork(ModNetwork::register);
+        // Nilai gizi makanan kafetaria disamakan sekali di sini; lihat FoodBalance
+        // untuk alasannya.
+        event.enqueueWork(FoodBalance::apply);
+    }
+
+    /** Config yang diubah selagi server jalan harus langsung terasa di piring. */
+    private void onConfigReload(ModConfigEvent.Reloading event) {
+        if (event.getConfig().getSpec() == JackConfig.SPEC) {
+            FoodBalance.apply();
+        }
     }
 }

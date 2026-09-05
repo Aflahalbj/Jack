@@ -8,6 +8,8 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.client.event.RenderHandEvent;
 import net.minecraftforge.client.event.RenderPlayerEvent;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -69,10 +71,38 @@ public class ClientEvents {
         }
     }
 
+    /**
+     * Klik kanan di meja kafetaria dihentikan di client juga, bukan cuma di server.
+     *
+     * <p>Ini perbaikan bug yang bikin makanan "hilang dua kali": client menebak sendiri
+     * hasil klik kanan sebelum server menjawab, dan tebakannya dijalankan lewat
+     * {@code use()} milik mod makanan - yang memindahkan makanan dari tangan ke tumpukan.
+     * Server menolak dan diam, jadi tidak ada yang membantah tebakan itu, dan di layar
+     * barangnya hilang dari tas sekaligus dari meja.</p>
+     *
+     * <p>Semua tangan diproses, bukan cuma tangan utama: klik kanan yang tidak
+     * menghasilkan apa-apa di tangan utama akan dicoba lagi dengan tangan kiri, dan
+     * percobaan kedua itu jalur yang sama persis.</p>
+     */
+    @SubscribeEvent
+    public static void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
+        // Wajib: di dunia singleplayer kejadian ini juga lewat sini untuk sisi server,
+        // dan membatalkannya di situ berarti pengambilan makanan tidak pernah sampai ke
+        // mesin gamenya sama sekali.
+        if (!event.getLevel().isClientSide) {
+            return;
+        }
+        if (ClientCafeteria.intercepts(event.getLevel(), event.getPos())) {
+            event.setCanceled(true);
+            event.setCancellationResult(InteractionResult.SUCCESS);
+        }
+    }
+
     @SubscribeEvent
     public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
         ClientGameState.reset();
         ClientLasers.clear();
         ClientRoster.reset();
+        ClientCafeteria.reset();
     }
 }

@@ -1,0 +1,244 @@
+{
+  "variants": {
+    "facing=north,half=lower,hinge=left,locked=true,open=false": {
+      "model": "jackofhearts:block/prison_door_bottom_left_locked",
+      "y": 270
+    },
+    "facing=north,half=lower,hinge=left,locked=false,open=false": {
+      "model": "jackofhearts:block/prison_door_bottom_left_unlocked",
+      "y": 270
+    },
+    "facing=north,half=lower,hinge=left,locked=true,open=true": {
+      "model": "jackofhearts:block/prison_door_bottom_left_open_locked"
+    },
+    "facing=north,half=lower,hinge=left,locked=false,open=true": {
+      "model": "jackofhearts:block/prison_door_bottom_left_open_unlocked"
+    },
+    "facing=north,half=lower,hinge=right,locked=true,open=false": {
+      "model": "jackofhearts:block/prison_door_bottom_right_locked",
+      "y": 270
+    },
+    "facing=north,half=lower,hinge=right,locked=false,open=false": {
+      "model": "jackofhearts:block/prison_door_bottom_right_unlocked",
+      "y": 270
+    },
+    "facing=north,half=lower,hinge=right,locked=true,open=true": {
+      "model": "jackofhearts:block/prison_door_bottom_right_open_locked",
+      "y": 180
+    },
+    "facing=north,half=lower,hinge=right,locked=false,open=true": {
+      "model": "jackofhearts:block/prison_door_bottom_right_open_unlocked",
+      "y": 180
+    },
+    "facing=north,half=upper,hinge=left,locked=true,open=false": {
+      "model": "jackofhearts:block/prison_door_top_left_locked",
+      "y": 270
+    },
+    "facing=north,half=upper,hinge=left,locked=false,open=false": {
+      "model": "jackofhearts:block/prison_door_top_left_unlocked",
+      "y": 270
+    },
+    "facing=north,half=upper,hinge=left,locked=true,open=true": {
+      "model": "jackofhearts:block/prison_door_top_left_open_locked"
+    },
+    "facing=north,half=upper,hinge=left,locked=false,open=true": {
+      "model": "jackofhearts:block/prison_door_top_left_open_unlocked"
+    },
+    "facing=north,half=upper,hinge=right,locked=true,open=false": {
+      "model": "jackofhearts:block/prison_door_top_right_locked",
+      "y": 270
+    },
+    "facing=north,half=upper,hinge=right,locked=false,open=false": {
+      "model": "jackofhearts:block/prison_door_top_right_unlocked",
+      "y": 270
+    },
+    "facing=north,half=upper,hinge=right,locked=true,open=true": {
+      "model": "jackofhearts:block/prison_door_top_right_open_locked",
+      "y": 180
+    },
+    "facing=north,half=upper,hinge=right,locked=false,open=true": {
+      "model": "jackofhearts:block/prison_door_top_right_open_unlocked",
+      "y": 180
+    },
+    "facing=south,half=lower,hinge=left,locked=true,open=false": {
+      "model": "jackofhearts:block/prison_door_bottom_left_locked",
+      "y": 90
+    },
+    "facing=south,half=lower,hinge=left,locked=false,open=false": {
+      "model": "jackofhearts:block/prison_door_bottom_left_unlocked",
+      "y": 90
+    },
+    "facing=south,half=lower,hinge=left,locked=true,open=true": {
+      "model": "jackofhearts:block/prison_door_bottom_left_open_locked",
+      "y": 180
+    },
+    "facing=south,half=lower,hinge=left,locked=false,open=true": {
+      "model": "jackofhearts:block/prison_door_bottom_left_open_unlocked",
+      "y": 180
+    },
+    "facing=south,half=lower,hinge=right,locked=true,open=false": {
+      "model": "jackofhearts:block/prison_door_bottom_right_locked",
+      "y": 90
+    },
+    "facing=south,half=lower,hinge=right,locked=false,open=false": {
+      "model": "jackofhearts:block/prison_door_bottom_right_unlocked",
+      "y": 90
+    },
+    "facing=south,half=lower,hinge=right,locked=true,open=true": {
+      "model": "jackofhearts:block/prison_door_bottom_right_open_locked"
+    },
+    "facing=south,half=lower,hinge=right,locked=false,open=true": {
+      "model": "jackofhearts:block/prison_door_bottom_right_open_unlocked"
+    },
+    "facing=south,half=upper,hinge=left,locked=true,open=false": {
+      "model": "jackofhearts:block/prison_door_top_left_locked",
+      "y": 90
+    },
+    "facing=south,half=upper,hinge=left,locked=false,open=false": {
+      "model": "jackofhearts:block/prison_door_top_left_unlocked",
+      "y": 90
+    },
+    "facing=south,half=upper,hinge=left,locked=true,open=true": {
+      "model": "jackofhearts:block/prison_door_top_left_open_locked",
+      "y": 180
+    },
+    "facing=south,half=upper,hinge=left,locked=false,open=true": {
+      "model": "jackofhearts:block/prison_door_top_left_open_unlocked",
+      "y": 180
+    },
+    "facing=south,half=upper,hinge=right,locked=true,open=false": {
+      "model": "jackofhearts:block/prison_door_top_right_locked",
+      "y": 90
+    },
+    "facing=south,half=upper,hinge=right,locked=false,open=false": {
+      "model": "jackofhearts:block/prison_door_top_right_unlocked",
+      "y": 90
+    },
+    "facing=south,half=upper,hinge=right,locked=true,open=true": {
+      "model": "jackofhearts:block/prison_door_top_right_open_locked"
+    },
+    "facing=south,half=upper,hinge=right,locked=false,open=true": {
+      "model": "jackofhearts:block/prison_door_top_right_open_unlocked"
+    },
+    "facing=east,half=lower,hinge=left,locked=true,open=false": {
+      "model": "jackofhearts:block/prison_door_bottom_left_locked"
+    },
+    "facing=east,half=lower,hinge=left,locked=false,open=false": {
+      "model": "jackofhearts:block/prison_door_bottom_left_unlocked"
+    },
+    "facing=east,half=lower,hinge=left,locked=true,open=true": {
+      "model": "jackofhearts:block/prison_door_bottom_left_open_locked",
+      "y": 90
+    },
+    "facing=east,half=lower,hinge=left,locked=false,open=true": {
+      "model": "jackofhearts:block/prison_door_bottom_left_open_unlocked",
+      "y": 90
+    },
+    "facing=east,half=lower,hinge=right,locked=true,open=false": {
+      "model": "jackofhearts:block/prison_door_bottom_right_locked"
+    },
+    "facing=east,half=lower,hinge=right,locked=false,open=false": {
+      "model": "jackofhearts:block/prison_door_bottom_right_unlocked"
+    },
+    "facing=east,half=lower,hinge=right,locked=true,open=true": {
+      "model": "jackofhearts:block/prison_door_bottom_right_open_locked",
+      "y": 270
+    },
+    "facing=east,half=lower,hinge=right,locked=false,open=true": {
+      "model": "jackofhearts:block/prison_door_bottom_right_open_unlocked",
+      "y": 270
+    },
+    "facing=east,half=upper,hinge=left,locked=true,open=false": {
+      "model": "jackofhearts:block/prison_door_top_left_locked"
+    },
+    "facing=east,half=upper,hinge=left,locked=false,open=false": {
+      "model": "jackofhearts:block/prison_door_top_left_unlocked"
+    },
+    "facing=east,half=upper,hinge=left,locked=true,open=true": {
+      "model": "jackofhearts:block/prison_door_top_left_open_locked",
+      "y": 90
+    },
+    "facing=east,half=upper,hinge=left,locked=false,open=true": {
+      "model": "jackofhearts:block/prison_door_top_left_open_unlocked",
+      "y": 90
+    },
+    "facing=east,half=upper,hinge=right,locked=true,open=false": {
+      "model": "jackofhearts:block/prison_door_top_right_locked"
+    },
+    "facing=east,half=upper,hinge=right,locked=false,open=false": {
+      "model": "jackofhearts:block/prison_door_top_right_unlocked"
+    },
+    "facing=east,half=upper,hinge=right,locked=true,open=true": {
+      "model": "jackofhearts:block/prison_door_top_right_open_locked",
+      "y": 270
+    },
+    "facing=east,half=upper,hinge=right,locked=false,open=true": {
+      "model": "jackofhearts:block/prison_door_top_right_open_unlocked",
+      "y": 270
+    },
+    "facing=west,half=lower,hinge=left,locked=true,open=false": {
+      "model": "jackofhearts:block/prison_door_bottom_left_locked",
+      "y": 180
+    },
+    "facing=west,half=lower,hinge=left,locked=false,open=false": {
+      "model": "jackofhearts:block/prison_door_bottom_left_unlocked",
+      "y": 180
+    },
+    "facing=west,half=lower,hinge=left,locked=true,open=true": {
+      "model": "jackofhearts:block/prison_door_bottom_left_open_locked",
+      "y": 270
+    },
+    "facing=west,half=lower,hinge=left,locked=false,open=true": {
+      "model": "jackofhearts:block/prison_door_bottom_left_open_unlocked",
+      "y": 270
+    },
+    "facing=west,half=lower,hinge=right,locked=true,open=false": {
+      "model": "jackofhearts:block/prison_door_bottom_right_locked",
+      "y": 180
+    },
+    "facing=west,half=lower,hinge=right,locked=false,open=false": {
+      "model": "jackofhearts:block/prison_door_bottom_right_unlocked",
+      "y": 180
+    },
+    "facing=west,half=lower,hinge=right,locked=true,open=true": {
+      "model": "jackofhearts:block/prison_door_bottom_right_open_locked",
+      "y": 90
+    },
+    "facing=west,half=lower,hinge=right,locked=false,open=true": {
+      "model": "jackofhearts:block/prison_door_bottom_right_open_unlocked",
+      "y": 90
+    },
+    "facing=west,half=upper,hinge=left,locked=true,open=false": {
+      "model": "jackofhearts:block/prison_door_top_left_locked",
+      "y": 180
+    },
+    "facing=west,half=upper,hinge=left,locked=false,open=false": {
+      "model": "jackofhearts:block/prison_door_top_left_unlocked",
+      "y": 180
+    },
+    "facing=west,half=upper,hinge=left,locked=true,open=true": {
+      "model": "jackofhearts:block/prison_door_top_left_open_locked",
+      "y": 270
+    },
+    "facing=west,half=upper,hinge=left,locked=false,open=true": {
+      "model": "jackofhearts:block/prison_door_top_left_open_unlocked",
+      "y": 270
+    },
+    "facing=west,half=upper,hinge=right,locked=true,open=false": {
+      "model": "jackofhearts:block/prison_door_top_right_locked",
+      "y": 180
+    },
+    "facing=west,half=upper,hinge=right,locked=false,open=false": {
+      "model": "jackofhearts:block/prison_door_top_right_unlocked",
+      "y": 180
+    },
+    "facing=west,half=upper,hinge=right,locked=true,open=true": {
+      "model": "jackofhearts:block/prison_door_top_right_open_locked",
+      "y": 90
+    },
+    "facing=west,half=upper,hinge=right,locked=false,open=true": {
+      "model": "jackofhearts:block/prison_door_top_right_open_unlocked",
+      "y": 90
+    }
+  }
+}

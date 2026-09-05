@@ -3,6 +3,9 @@ package com.aflah.jackofhearts.game;
 import com.aflah.jackofhearts.JackOfHeartsMod;
 import com.aflah.jackofhearts.block.MonitorBlock;
 import com.aflah.jackofhearts.blockentity.MonitorTracker;
+import com.aflah.jackofhearts.block.PrisonDoorTracker;
+import com.aflah.jackofhearts.cafeteria.Cafeteria;
+import com.aflah.jackofhearts.cafeteria.HungerRules;
 import com.aflah.jackofhearts.config.JackConfig;
 import com.aflah.jackofhearts.entity.Blood;
 import com.aflah.jackofhearts.entity.CorpseEntity;
@@ -51,6 +54,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.pathfinder.PathComputationType;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.GameType;
@@ -58,8 +62,11 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 
 import javax.annotation.Nullable;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -91,12 +98,23 @@ public class GameManager {
      * perlu disusun ulang tiap ronde baru dimulai.
      */
     private final Map<UUID, String> registered = new LinkedHashMap<>();
+    /**
+     * Peserta yang tebakannya selalu dinilai benar. Murni alat testing (/jack debug
+     * true), supaya jalannya beberapa ronde bisa dicoba tanpa harus menebak benar
+     * tiap kali. Bertahan lintas game seperti daftar terdaftar, karena yang
+     * menyalakannya biasanya sedang menguji berturut-turut.
+     */
+    private final Set<UUID> alwaysCorrect = new LinkedHashSet<>();
+    /**
+     * Fase terakhir yang sudah diterapkan ke pintu sel. Perbandingannya dilakukan di
+     * tick, bukan di tiap tempat fase berganti — dengan begitu tidak ada satu pun
+     * jalur pergantian fase (termasuk /jack skip dan /jack stop) yang bisa terlewat.
+     */
+    @Nullable
+    private GamePhase lastDoorPhase;
+    /** Supaya peringatan roomMarkerBlock yang tidak dikenal cuma keluar sekali. */
+    private boolean warnedMissingMarker;
 
-    @Nullable
-    private ResourceKey<Level> guessRoomDimension;
-    @Nullable
-    private BlockPos guessRoomPos;
-    private float guessRoomYaw;
 
     private GameManager() {
     }
@@ -124,6 +142,12 @@ public class GameManager {
     private static final int LASER_CHARGE_TICKS = 30;
     /** Radius pencarian Terminal Tebakan untuk korban yang tidak pernah mengklik apa pun. */
     private static final int GUESS_BLOCK_SEARCH = 12;
+    /**
+     * Batas petak yang ditelusuri saat mencari terminal sekamar. Ruangan sel jauh
+     * lebih kecil dari ini; batasnya ada supaya ruangan terbuka (atau langit-langit
+     * yang bolong) tidak membuat penelusurannya melebar ke seluruh peta.
+     */
+    private static final int ROOM_FLOOD_LIMIT = 4096;
     /** Sejauh apa laser masih dikirim ke pemain lain untuk digambar. */
     private static final double LASER_VIEW_RANGE = 192.0D;
 
@@ -227,21 +251,6 @@ public class GameManager {
         return Collections.unmodifiableMap(participants);
     }
 
-    public void setGuessRoom(ServerPlayer player) {
-        this.guessRoomDimension = player.level().dimension();
-        this.guessRoomPos = player.blockPosition();
-        this.guessRoomYaw = player.getYRot();
-    }
-
-    public boolean hasGuessRoom() {
-        return guessRoomDimension != null && guessRoomPos != null;
-    }
-
-    @Nullable
-    public BlockPos getGuessRoomPos() {
-        return guessRoomPos;
-    }
-
     // ------------------------------------------------------------------ registrasi
 
     /** @return false kalau pemain ini memang sudah terdaftar. */
@@ -262,6 +271,31 @@ public class GameManager {
 
     public Map<UUID, String> getRegistered() {
         return Collections.unmodifiableMap(registered);
+    }
+
+    /**
+     * Nyalakan/matikan debug tebakan-selalu-benar untuk satu peserta. Berlaku untuk
+     * ronde yang sedang berjalan saja — setelannya hilang sendiri begitu fase menebak
+     * dinilai.
+     *
+     * @return true kalau nilainya benar-benar berubah
+     */
+    public boolean setAlwaysCorrect(ServerPlayer player, boolean value) {
+        boolean changed = value
+                ? alwaysCorrect.add(player.getUUID())
+                : alwaysCorrect.remove(player.getUUID());
+        PlayerData data = participants.get(player.getUUID());
+        if (value && data != null && data.alive && phase == GamePhase.GUESS) {
+            // Dinyalakan di tengah fase menebak: tebakannya diisikan sekarang juga,
+            // supaya yang terlihat di HUD sama dengan yang akan dinilai nanti.
+            data.guess = data.symbol;
+            syncPlayer(player, data);
+        }
+        return changed;
+    }
+
+    public boolean isAlwaysCorrect(UUID uuid) {
+        return alwaysCorrect.contains(uuid);
     }
 
     public boolean isRegistered(ServerPlayer player) {
@@ -329,6 +363,21 @@ public class GameManager {
 
         broadcast(server, Component.translatable("message.jackofhearts.game_started", players.size())
                 .withStyle(ChatFormatting.GOLD));
+
+        // Kafetaria ditata ulang dan stoknya dihitung dari jumlah pemain yang benar-
+        // benar ikut, bukan dari jumlah yang terdaftar: yang sedang offline tidak
+        // makan.
+        HungerRules.clear();
+        if (JackConfig.CONFIG.resetHungerOnStart.get()) {
+            for (ServerPlayer player : players) {
+                HungerRules.reset(player);
+            }
+        }
+        Component cafeteriaWarning = Cafeteria.get().start(server, players.size());
+        if (cafeteriaWarning != null) {
+            broadcast(server, cafeteriaWarning);
+        }
+
         syncRoster(server);
         beginReveal(server);
         return null;
@@ -342,6 +391,8 @@ public class GameManager {
         endDebugLaser(server);
         clearCorpses(server);
         setParticipantsInvulnerable(server, false);
+        Cafeteria.get().stop(server);
+        HungerRules.clear();
         for (ServerPlayer player : onlineParticipants(server)) {
             stripUniform(player);
         }
@@ -363,6 +414,9 @@ public class GameManager {
     // ------------------------------------------------------------------ tick
 
     public void tick(MinecraftServer server) {
+        // Di luar penjagaan isRunning() di bawah, dan sengaja paling awal: pintu sel
+        // justru harus terkunci saat tidak ada game berjalan.
+        syncPrisonDoors(server);
         // Di luar penjagaan isRunning() di bawah: pratinjau laser justru dipakai saat
         // tidak ada game yang berjalan, dan padamnya panel dijadwalkan melewati batas
         // fase.
@@ -370,12 +424,22 @@ public class GameManager {
         tickPanelQueue(server);
         tickBoardView(server);
         tickPendingWin(server);
+        // Di luar penjagaan isRunning() di bawah, dan memang harus: inilah yang
+        // memotret penataan meja kafetaria, dan itu cuma boleh dilakukan saat tidak
+        // ada game berjalan.
+        Cafeteria.get().idleTick(server);
 
         if (!isRunning()) {
             return;
         }
 
         timer--;
+
+        // Fase reveal dilewati: layarnya mengunci input pemain, dan membuat orang
+        // yang tidak bisa bergerak jadi lapar bukan tantangan, cuma pajak.
+        if (phase != GamePhase.REVEAL) {
+            tickHunger(server);
+        }
 
         if (phase == GamePhase.REVEAL) {
             if (timer <= 0) {
@@ -410,6 +474,44 @@ public class GameManager {
             syncCooldown = 5;
             syncAll(server);
         }
+    }
+
+    /**
+     * Pintu sel terbuka <b>hanya</b> selama fase menebak; di fase mana pun selain itu
+     * pintunya menutup dan terkunci.
+     *
+     * <p>Penyetelan penuh cuma dijalankan saat fasenya benar-benar berganti. Kalau
+     * dijalankan tiap tick, pintu yang membanting sendiri karena dilewati peserta
+     * akan langsung dibuka lagi — padahal membanting itu justru tujuannya.</p>
+     */
+    /**
+     * Pintu sel dibuka kuncinya di <b>setiap</b> pergantian fase, tanpa syarat.
+     *
+     * <p>Yang menguncinya cuma satu hal, dan itu terjadi di luar sini: ada yang masuk
+     * selagi fase menebak berjalan ({@link com.aflah.jackofhearts.block.PrisonDoorBlock}).
+     * Karena kuncinya selalu dilepas di pergantian fase berikutnya, tidak ada seorang
+     * pun yang bisa terkurung lebih lama dari satu fase menebak.</p>
+     */
+    /** Lapar yang dipercepat cuma berlaku untuk peserta yang masih hidup. */
+    private void tickHunger(MinecraftServer server) {
+        for (ServerPlayer player : onlineParticipants(server)) {
+            PlayerData data = participants.get(player.getUUID());
+            if (data != null && data.alive) {
+                HungerRules.tick(player);
+            }
+        }
+    }
+
+    private void syncPrisonDoors(MinecraftServer server) {
+        if (phase != lastDoorPhase) {
+            lastDoorPhase = phase;
+            PrisonDoorTracker.applyToAll(server, false);
+            return;
+        }
+        // Pintu yang baru dipasang atau chunk-nya baru dimuat menyusul di sini. Bukan
+        // penyetelan penuh: pintu yang barusan mengunci karena dimasuki orang tidak
+        // boleh ikut dibuka lagi di tick berikutnya.
+        PrisonDoorTracker.applyToNew(server, false);
     }
 
     private void announceRoundCountdown(MinecraftServer server) {
@@ -516,6 +618,7 @@ public class GameManager {
         }
 
         enforceUniforms(server);
+        Cafeteria.get().onRoundStart(server);
 
         for (ServerPlayer player : onlineParticipants(server)) {
             PlayerData data = participants.get(player.getUUID());
@@ -536,17 +639,15 @@ public class GameManager {
         phase = GamePhase.GUESS;
         timer = JackConfig.CONFIG.guessSeconds.get() * 20;
 
-        boolean teleport = JackConfig.CONFIG.teleportToGuessRoom.get() && hasGuessRoom();
-        ServerLevel roomLevel = teleport ? server.getLevel(guessRoomDimension) : null;
-
         for (ServerPlayer player : onlineParticipants(server)) {
             PlayerData data = participants.get(player.getUUID());
             if (data == null || !data.alive) {
                 continue;
             }
-            if (roomLevel != null && guessRoomPos != null) {
-                player.teleportTo(roomLevel, guessRoomPos.getX() + 0.5D, guessRoomPos.getY(),
-                        guessRoomPos.getZ() + 0.5D, guessRoomYaw, 0.0F);
+            if (alwaysCorrect.contains(data.uuid)) {
+                // Diisikan sejak awal, bukan cuma dinilai benar belakangan, supaya HUD
+                // dan GUI-nya ikut menunjukkan tebakan yang akan lolos nanti.
+                data.guess = data.symbol;
             }
             title(player, Component.translatable("message.jackofhearts.guess_title").withStyle(ChatFormatting.RED),
                     Component.translatable("message.jackofhearts.guess_subtitle",
@@ -566,7 +667,7 @@ public class GameManager {
             if (data == null || !data.alive) {
                 continue;
             }
-            if (data.guess != null && data.guess == data.symbol) {
+            if (alwaysCorrect.contains(data.uuid) || (data.guess != null && data.guess == data.symbol)) {
                 safe.add(player);
             } else {
                 wrong.add(player);
@@ -588,8 +689,16 @@ public class GameManager {
         for (PlayerData data : participants.values()) {
             data.guess = null;
         }
+        // Debug tebakan-selalu-benar berlaku satu ronde saja: ronde yang barusan
+        // dinilai. Tanpa ini, sekali dinyalakan pesertanya kebal sampai game selesai.
+        alwaysCorrect.clear();
 
-        if (JackConfig.CONFIG.eliminateOnWrongGuess.get() && !wrong.isEmpty()) {
+        if (JackConfig.CONFIG.eliminateOnWrongGuess.get()) {
+            // Selalu lewat fase eksekusi, termasuk ronde yang tidak memakan korban
+            // sama sekali: yang menebak benar pun harus melihat lasernya mengisi daya
+            // lalu padam. Kalau adegannya cuma muncul saat ada yang mati, adegan itu
+            // sendiri sudah membocorkan hasilnya sebelum sinarnya jatuh.
+            //
             // Hasilnya sengaja belum diumumkan ke siapa pun. Fase laser yang akan
             // mengumumkannya, tepat saat sinarnya jatuh.
             beginExecution(server, wrong, safe);
@@ -603,6 +712,10 @@ public class GameManager {
         for (ServerPlayer player : wrong) {
             announceWrong(player);
         }
+
+        // Jalur ini cuma terpakai kalau eliminateOnWrongGuess dimatikan, jadi tidak
+        // ada adegan laser yang perlu ditunggu selesai.
+        scheduleBoardView(server, 0, BOARD_VIEW_LEAD);
 
         if (!checkWinConditions(server, true)) {
             beginRound(server);
@@ -946,20 +1059,38 @@ public class GameManager {
 
     /** Cek blok penanda di bawah kaki korban, beberapa blok ke bawah. */
     private boolean isInGuessRoom(ServerPlayer victim) {
+        Block marker = roomMarkerBlock();
+        return marker != null && standsOnRoomMarker(victim, marker);
+    }
+
+    /**
+     * Blok penanda lantai ruang tebak, atau null kalau isinya tidak dikenal.
+     *
+     * <p>Peringatannya cuma keluar sekali. Fungsi ini dipanggil berkali-kali per detik
+     * untuk memeriksa isi ruangan, dan log yang membanjir justru menutupi masalahnya
+     * sendiri.</p>
+     */
+    @Nullable
+    Block roomMarkerBlock() {
         Block marker = ForgeRegistries.BLOCKS.getValue(
                 ResourceLocation.tryParse(JackConfig.CONFIG.roomMarkerBlock.get()));
-        if (marker == null) {
+        if (marker == null && !warnedMissingMarker) {
+            warnedMissingMarker = true;
             JackOfHeartsMod.LOGGER.warn(
-                    "[JackOfHearts] roomMarkerBlock '{}' tidak dikenal, laser memakai langit.",
+                    "[JackOfHearts] roomMarkerBlock '{}' tidak dikenal: laser memakai langit, "
+                            + "dan Pintu Sel tidak akan pernah tahu ruangannya masih terisi.",
                     JackConfig.CONFIG.roomMarkerBlock.get());
-            return false;
         }
-        ServerLevel level = victim.serverLevel();
-        BlockPos feet = victim.blockPosition();
+        return marker;
+    }
+
+    /** Ada blok penanda di bawah kaki pemain, sampai {@code roomMarkerDepth} ke bawah. */
+    boolean standsOnRoomMarker(ServerPlayer player, Block marker) {
+        ServerLevel level = player.serverLevel();
+        BlockPos feet = player.blockPosition();
         int depth = JackConfig.CONFIG.roomMarkerDepth.get();
         for (int dy = 1; dy <= depth; dy++) {
-            BlockState state = level.getBlockState(feet.below(dy));
-            if (state.is(marker)) {
+            if (level.getBlockState(feet.below(dy)).is(marker)) {
                 return true;
             }
         }
@@ -971,7 +1102,7 @@ public class GameManager {
      * menebak sama sekali, yang terdekat di sekitarnya.
      */
     @Nullable
-    private BlockPos findGuessBlock(ServerPlayer victim) {
+    BlockPos findGuessBlock(ServerPlayer victim) {
         ServerLevel level = victim.serverLevel();
         PlayerData data = participants.get(victim.getUUID());
 
@@ -981,6 +1112,64 @@ public class GameManager {
         }
 
         BlockPos feet = victim.blockPosition();
+        BlockPos sameRoom = nearestReachableGuessBlock(level, feet);
+        return sameRoom != null ? sameRoom : nearestGuessBlock(level, feet);
+    }
+
+    /**
+     * Terminal terdekat yang benar-benar <b>bisa dijangkau dengan berjalan</b> dari
+     * tempat korban berdiri.
+     *
+     * <p>Terdekat saja tidak cukup: jarak diukur lurus menembus tembok, jadi terminal
+     * di kamar sebelah sering lebih dekat daripada terminal di kamar yang sedang
+     * ditempati — dan lasernya keluar dari kamar orang lain. Garis pandang juga tidak
+     * cukup, karena ia lolos lewat pintu yang kebetulan sedang terbuka.</p>
+     *
+     * <p>Jadi ruangannya ditelusuri seperti orang berjalan: petak demi petak lewat
+     * ruang yang bisa dilalui. Tembok menghentikannya, dan pintu sel yang tertutup
+     * juga — {@code isPathfindable} sebuah pintu bernilai false selama daunnya
+     * tertutup. Itu persis arti "kamar dia".</p>
+     */
+    @Nullable
+    private BlockPos nearestReachableGuessBlock(ServerLevel level, BlockPos from) {
+        Set<BlockPos> visited = new HashSet<>();
+        Deque<BlockPos> queue = new ArrayDeque<>();
+        visited.add(from.immutable());
+        queue.add(from.immutable());
+
+        BlockPos best = null;
+        double bestDistance = Double.MAX_VALUE;
+        while (!queue.isEmpty() && visited.size() < ROOM_FLOOD_LIMIT) {
+            BlockPos current = queue.poll();
+            for (Direction direction : Direction.values()) {
+                BlockPos next = current.relative(direction);
+                if (Math.abs(next.getX() - from.getX()) > GUESS_BLOCK_SEARCH
+                        || Math.abs(next.getY() - from.getY()) > GUESS_BLOCK_SEARCH
+                        || Math.abs(next.getZ() - from.getZ()) > GUESS_BLOCK_SEARCH
+                        || !visited.add(next.immutable())) {
+                    continue;
+                }
+                BlockState state = level.getBlockState(next);
+                if (state.is(ModBlocks.GUESS_BLOCK.get())) {
+                    double d = next.distSqr(from);
+                    if (d < bestDistance) {
+                        bestDistance = d;
+                        best = next.immutable();
+                    }
+                    // Terminalnya blok padat: ruangan tidak diteruskan menembusnya.
+                    continue;
+                }
+                if (state.isPathfindable(level, next, PathComputationType.LAND)) {
+                    queue.add(next.immutable());
+                }
+            }
+        }
+        return best;
+    }
+
+    /** Terminal terdekat apa adanya, tanpa peduli tembok. Jaring pengaman terakhir. */
+    @Nullable
+    private BlockPos nearestGuessBlock(ServerLevel level, BlockPos feet) {
         BlockPos nearest = null;
         double best = Double.MAX_VALUE;
         for (BlockPos pos : BlockPos.betweenClosed(
@@ -1012,13 +1201,17 @@ public class GameManager {
         }
         pendingExecution.clear();
 
+        int boardStart = boardViewStartDelay(hit.size());
+
         for (int i = 0; i < hit.size(); i++) {
             ServerPlayer victim = hit.get(i);
             ExecutionShot shot = executionCameras.get(victim.getUUID());
             // Panelnya padam satu per satu, bukan serentak. Kalau tiga orang gugur
             // bersamaan dan papannya mati sekaligus, yang terdengar cuma satu bunyi
             // dan tidak ada yang sempat melihat siapa saja yang hilang.
-            queuePanelOff(victim.getUUID(), PANEL_OFF_DELAY + i * PANEL_OFF_STAGGER);
+            // Panelnya padam setelah kamera sampai di depan papan, bukan sebelumnya:
+            // panel yang padam saat tidak ada yang menonton sama saja tidak padam.
+            queuePanelOff(victim.getUUID(), boardStart + BOARD_VIEW_LEAD + i * PANEL_OFF_STAGGER);
             // Simbol aslinya disingkap tepat sebelum sinarnya jatuh, bukan saat fase
             // tebakan berakhir.
             announceWrong(victim);
@@ -1032,7 +1225,7 @@ public class GameManager {
 
         // Papan baru menyala setelah semua korban ronde ini terdaftar, jadi lamanya
         // adegan menyesuaikan berapa panel yang harus padam.
-        scheduleBoardView(server, hit.size());
+        scheduleBoardView(server, hit.size(), boardStart);
 
         // Detik yang sama untuk yang selamat: muatannya padam dan barulah dia tahu.
         for (UUID uuid : pendingSafe) {
@@ -1251,6 +1444,14 @@ public class GameManager {
     private static final int BOARD_VIEW_LEAD = 10;
     /** Berapa lama kamera bertahan setelah panel terakhir padam. */
     private static final int BOARD_VIEW_TAIL = 40;
+    /**
+     * Jeda dari adegan laser <i>terpanjang</i> sampai kamera berpindah ke papan.
+     *
+     * <p>Diukur dari ujung adegan, bukan dari saat sinarnya jatuh: yang paling lama
+     * selesai belum tentu tembakannya — sinar yang memudar dan mayat yang ambruk
+     * jalannya sendiri-sendiri. Lihat {@link #boardViewStartDelay(int)}.</p>
+     */
+    private static final int SCENE_TO_BOARD_TICKS = 100;
 
     /** Pemenang yang sudah ditentukan tapi pengumumannya menunggu papan selesai. */
     @Nullable
@@ -1329,11 +1530,30 @@ public class GameManager {
      * termasuk tidak ada yang dibekukan. Membekukan semua orang untuk menonton papan
      * yang tidak ada adalah cara paling pasti untuk merusak satu ronde penuh.</p>
      */
-    private void scheduleBoardView(MinecraftServer server, int deaths) {
-        if (deaths <= 0) {
-            return;
-        }
-        boardViewDelay = Math.max(1, PANEL_OFF_DELAY - BOARD_VIEW_LEAD);
+    /**
+     * Berapa tick setelah sinar jatuh sampai kamera boleh berpindah ke papan.
+     *
+     * <p>Diambil dari adegan yang paling lama selesai, lalu ditambah
+     * {@link #SCENE_TO_BOARD_TICKS}. Ada dua adegan yang jalan bersamaan dan panjangnya
+     * beda: sinarnya sendiri baru habis memudar {@value #LASER_CHARGE_TICKS} tick
+     * setelah jatuh (juga untuk yang gertakan dan yang turun dari langit), sementara
+     * korban yang ambruk butuh {@link CorpseEntity#ANIM_TICKS} tick. Ronde tanpa korban
+     * tidak punya adegan ambruk sama sekali, jadi yang dihitung cuma sinarnya.</p>
+     */
+    private int boardViewStartDelay(int deaths) {
+        int longestScene = Math.max(LASER_CHARGE_TICKS, deaths > 0 ? CorpseEntity.ANIM_TICKS : 0);
+        return longestScene + SCENE_TO_BOARD_TICKS;
+    }
+
+    /**
+     * @param deaths     berapa panel yang akan padam selama adegan. 0 berarti ronde ini
+     *                   tidak memakan korban — papannya tetap ditampilkan, justru itu
+     *                   kabarnya: semua orang masih ada. Yang tidak dikerjakan cuma
+     *                   memadamkan panel, karena memang tidak ada yang mati.
+     * @param delayTicks jeda sampai kameranya berpindah.
+     */
+    private void scheduleBoardView(MinecraftServer server, int deaths, int delayTicks) {
+        boardViewDelay = Math.max(1, delayTicks);
         boardViewDuration = BOARD_VIEW_LEAD + deaths * PANEL_OFF_STAGGER + BOARD_VIEW_TAIL;
     }
 
@@ -1740,6 +1960,7 @@ public class GameManager {
         syncPlayer(player, data);
         // Yang baru masuk belum punya isi papan sama sekali.
         syncRoster(player.server);
+        Cafeteria.get().syncTo(player);
     }
 
     public void syncPlayer(ServerPlayer player, @Nullable PlayerData data) {

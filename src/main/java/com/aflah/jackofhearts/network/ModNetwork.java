@@ -62,6 +62,12 @@ public class ModNetwork {
                 .consumerMainThread(PanelOffPacket::handle)
                 .add();
 
+        CHANNEL.messageBuilder(CafeteriaPacket.class, nextId++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(CafeteriaPacket::encode)
+                .decoder(CafeteriaPacket::decode)
+                .consumerMainThread(CafeteriaPacket::handle)
+                .add();
+
         CHANNEL.messageBuilder(SubmitGuessPacket.class, nextId++, NetworkDirection.PLAY_TO_SERVER)
                 .encoder(SubmitGuessPacket::encode)
                 .decoder(SubmitGuessPacket::decode)

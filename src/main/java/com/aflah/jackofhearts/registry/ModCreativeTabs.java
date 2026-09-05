@@ -23,6 +23,7 @@ public class ModCreativeTabs {
                         output.accept(ModBlocks.GUESS_BLOCK.get());
                         output.accept(ModBlocks.MONITOR.get());
                         output.accept(ModBlocks.MONITOR_FRAME.get());
+                        output.accept(ModBlocks.PRISON_DOOR.get());
                         output.accept(ModBlocks.SITTABLE_QUARTZ_STAIRS.get());
                         output.accept(ModBlocks.SITTABLE_JUNGLE_STAIRS.get());
                     })

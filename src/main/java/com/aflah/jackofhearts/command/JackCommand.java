@@ -5,6 +5,7 @@ import com.aflah.jackofhearts.game.GameManager;
 import com.aflah.jackofhearts.game.PlayerData;
 import com.aflah.jackofhearts.game.Role;
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
@@ -71,7 +72,6 @@ public class JackCommand {
         root.then(Commands.literal("stop").executes(JackCommand::stop));
         root.then(Commands.literal("status").executes(JackCommand::status));
         root.then(Commands.literal("skip").executes(JackCommand::skip));
-        root.then(Commands.literal("setroom").executes(JackCommand::setRoom));
         root.then(Commands.literal("reveal").executes(JackCommand::reveal));
         root.then(Commands.literal("debugrole").executes(JackCommand::debugRole));
 
@@ -86,9 +86,45 @@ public class JackCommand {
                         .executes(ctx -> debugLaser(ctx, List.of(ctx.getSource().getPlayerOrException()), false))
                         .then(Commands.argument("targets", EntityArgument.players())
                                 .executes(ctx -> debugLaser(ctx, EntityArgument.getPlayers(ctx, "targets"), false))))
-                .then(Commands.literal("clearcorpse").executes(JackCommand::clearCorpses)));
+                .then(Commands.literal("clearcorpse").executes(JackCommand::clearCorpses))
+                // /jack debug true|false [targets] -- tebakan sasaran selalu dinilai benar.
+                .then(Commands.argument("always_correct", BoolArgumentType.bool())
+                        .executes(ctx -> setAlwaysCorrect(ctx, List.of(ctx.getSource().getPlayerOrException()),
+                                BoolArgumentType.getBool(ctx, "always_correct")))
+                        .then(Commands.argument("targets", EntityArgument.players())
+                                .executes(ctx -> setAlwaysCorrect(ctx, EntityArgument.getPlayers(ctx, "targets"),
+                                        BoolArgumentType.getBool(ctx, "always_correct"))))));
 
         dispatcher.register(root);
+    }
+
+    /**
+     * Alat testing: tebakan sasaran dinilai benar untuk <b>ronde yang sedang berjalan
+     * saja</b>, lalu setelannya hilang sendiri begitu fase menebak dinilai.
+     *
+     * <p>Tebakannya juga langsung diisikan benar begitu fase menebak dimulai, supaya
+     * yang terlihat di HUD sama dengan yang akan dinilai.</p>
+     */
+    private static int setAlwaysCorrect(CommandContext<CommandSourceStack> ctx,
+                                        Collection<ServerPlayer> targets, boolean value) {
+        GameManager manager = GameManager.get();
+        int changed = 0;
+        for (ServerPlayer player : targets) {
+            if (manager.setAlwaysCorrect(player, value)) {
+                changed++;
+            }
+            player.sendSystemMessage(Component.translatable(value
+                            ? "message.jackofhearts.debug_correct_on"
+                            : "message.jackofhearts.debug_correct_off")
+                    .withStyle(value ? ChatFormatting.LIGHT_PURPLE : ChatFormatting.GRAY));
+        }
+        final int done = changed;
+        final int total = targets.size();
+        ctx.getSource().sendSuccess(() -> Component.translatable(value
+                        ? "message.jackofhearts.debug_correct_set_on"
+                        : "message.jackofhearts.debug_correct_set_off", done, total)
+                .withStyle(ChatFormatting.LIGHT_PURPLE), true);
+        return done;
     }
 
     private static int setRegistered(CommandContext<CommandSourceStack> ctx,
@@ -267,15 +303,6 @@ public class JackCommand {
         }
         manager.skipPhase();
         ctx.getSource().sendSuccess(() -> Component.translatable("message.jackofhearts.phase_skipped"), true);
-        return 1;
-    }
-
-    private static int setRoom(CommandContext<CommandSourceStack> ctx) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
-        ServerPlayer player = ctx.getSource().getPlayerOrException();
-        GameManager.get().setGuessRoom(player);
-        BlockPos pos = player.blockPosition();
-        ctx.getSource().sendSuccess(() -> Component.translatable("message.jackofhearts.room_set",
-                pos.getX(), pos.getY(), pos.getZ()).withStyle(ChatFormatting.GREEN), true);
         return 1;
     }
 
