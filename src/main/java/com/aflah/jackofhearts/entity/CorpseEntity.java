@@ -156,6 +156,17 @@ public class CorpseEntity extends LivingEntity {
         return this.entityData.get(DATA_OWNER).orElse(null);
     }
 
+    /**
+     * Ganti pemilik skinnya.
+     *
+     * <p>Perlu untuk mayat yang disalin dari <b>badan pengganti</b> peserta offline:
+     * yang tergeletak di situ memang badan itu, tapi wajah yang harus tergambar wajah
+     * pemiliknya — dan UUID badan pengganti adalah UUID entitas, bukan UUID pemain.</p>
+     */
+    public void setOwner(UUID uuid) {
+        this.entityData.set(DATA_OWNER, Optional.of(uuid));
+    }
+
     public float getToppleAngle() {
         return this.entityData.get(DATA_TOPPLE);
     }

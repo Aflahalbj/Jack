@@ -3,18 +3,27 @@ package com.aflah.jackofhearts.game;
 import com.aflah.jackofhearts.JackOfHeartsMod;
 import com.aflah.jackofhearts.block.PrisonDoorTracker;
 import com.aflah.jackofhearts.cafeteria.Cafeteria;
+import com.aflah.jackofhearts.cafeteria.CafeteriaFood;
+import com.aflah.jackofhearts.cafeteria.FoodStash;
 import com.aflah.jackofhearts.command.JackCommand;
 import com.aflah.jackofhearts.item.SymbolArmorItem;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.tags.DamageTypeTags;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.item.ItemTossEvent;
+import net.minecraftforge.event.entity.living.LivingAttackEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
@@ -40,10 +49,49 @@ public class ServerEvents {
         }
     }
 
+    /**
+     * Selama permainan berjalan, satu-satunya yang bisa melukai pemain adalah lapar.
+     *
+     * <p>Kerusakan apa pun ke pemain dibatalkan: pukulan pemain lain, jatuh, api, mob,
+     * ledakan, semuanya. Yang tersisa cuma dua jalan keluar dari permainan ini — laser
+     * fase menebak, yang tidak pernah lewat sistem kerusakan sama sekali (korbannya
+     * langsung dijadikan penonton), dan perut yang kosong.</p>
+     *
+     * <p>Dibatalkan di {@code LivingAttackEvent}, bukan di {@code LivingHurtEvent},
+     * supaya seluruh kejadiannya batal: tidak ada dorongan, tidak ada kedipan merah,
+     * dan tidak ada bunyi kesakitan. Kerusakan yang setengah batal justru bikin orang
+     * mengira dia sedang kehabisan darah.</p>
+     *
+     * <p>Yang tetap lolos selain lapar cuma kerusakan yang menembus kekebalan apa pun —
+     * jatuh ke luar dunia dan {@code /kill}. Keduanya bukan bagian permainan: yang
+     * pertama tidak punya dasar untuk berhenti sendiri, dan yang kedua alat host yang
+     * harus tetap bisa dipakai kalau ada yang tersangkut.</p>
+     */
+    @SubscribeEvent
+    public static void onLivingAttack(LivingAttackEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer) || !GameManager.get().isRunning()) {
+            return;
+        }
+        DamageSource source = event.getSource();
+        if (source.is(DamageTypes.STARVE) || source.is(DamageTypeTags.BYPASSES_INVULNERABILITY)) {
+            return;
+        }
+        event.setCanceled(true);
+    }
+
+    /**
+     * Peserta yang kehabisan nyawa karena lapar tidak benar-benar mati.
+     *
+     * <p>Kejadiannya dibatalkan dan orangnya langsung dijadikan penonton, persis seperti
+     * korban laser: tidak ada layar kematian, tidak ada isi tas yang tercecer, dan tidak
+     * ada respawn yang harus diurus. Yang tertinggal di ruangan mayatnya, bukan
+     * kekosongan.</p>
+     */
     @SubscribeEvent
     public static void onDeath(LivingDeathEvent event) {
-        if (event.getEntity() instanceof ServerPlayer player) {
-            GameManager.get().onPlayerDeath(player, event.getSource());
+        if (event.getEntity() instanceof ServerPlayer player
+                && GameManager.get().onPlayerDeath(player, event.getSource())) {
+            event.setCanceled(true);
         }
     }
 
@@ -62,6 +110,21 @@ public class ServerEvents {
     }
 
     /**
+     * Peserta yang keluar di tengah permainan meninggalkan badan penggantinya.
+     *
+     * <p>Kejadian ini dipicu sebelum pemainnya benar-benar dikeluarkan dari dunia, jadi
+     * posisi, arah hadap, seragam, dan isi perutnya masih bisa dibaca apa adanya —
+     * itulah yang disalin ke badan penggantinya.</p>
+     */
+    @SubscribeEvent
+    public static void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            GameManager.get().onPlayerLogout(player);
+            FoodStash.forget(player);
+        }
+    }
+
+    /**
      * Seragam tidak boleh keluar dari pemainnya. Kalau dibiarkan jatuh ke tanah,
      * slot armor akan diisi ulang dan barang di tanah itu jadi salinan kedua.
      */
@@ -70,9 +133,77 @@ public class ServerEvents {
         if (!GameManager.get().isRunning()) {
             return;
         }
-        if (event.getEntity().getItem().getItem() instanceof SymbolArmorItem) {
-            event.setCanceled(true);
+        ItemStack stack = event.getEntity().getItem();
+        if (!(stack.getItem() instanceof SymbolArmorItem) && !CafeteriaFood.isCafeteriaFood(stack)) {
+            return;
         }
+        event.setCanceled(true);
+        // Membatalkan kejadian ini cuma menahan barangnya masuk ke dunia; barangnya
+        // sendiri sudah terlanjur dikeluarkan dari tas sebelum kejadiannya dipicu. Tanpa
+        // dikembalikan di sini, menjatuhkan makanan justru jadi cara paling cepat
+        // menghabiskan stok - barangnya lenyap begitu saja.
+        if (event.getPlayer() instanceof ServerPlayer player) {
+            player.getInventory().add(stack);
+            player.inventoryMenu.broadcastChanges();
+        }
+    }
+
+    /**
+     * Makanan kafetaria yang dititipkan ke wadah dikembalikan ke tas pemiliknya.
+     *
+     * <p>Diperiksa tiap tick, bukan saat kliknya, karena tidak ada kejadian klik slot
+     * yang bisa dicegat - lihat {@link FoodStash}.</p>
+     *
+     * <p>Mode kreatif <b>tidak</b> dikecualikan. Selama permainan berjalan, host yang
+     * sedang kreatif tetap orang yang bisa memindahkan makanan ke peti, dan pengecualian
+     * itu justru satu-satunya lubang yang tersisa. Kalau memang perlu menata ulang
+     * dunia, hentikan dulu permainannya.</p>
+     */
+    @SubscribeEvent
+    public static void onPlayerTick(TickEvent.PlayerTickEvent event) {
+        if (event.phase != TickEvent.Phase.END
+                || !(event.player instanceof ServerPlayer player)
+                || !GameManager.get().isRunning()) {
+            return;
+        }
+        if (FoodStash.tick(player)) {
+            refuseStash(player);
+        }
+    }
+
+    /**
+     * Makanan kafetaria juga tidak bisa dititipkan ke <b>entitas</b>: bingkai barang,
+     * hewan yang diberi makan, gerobak berpeti.
+     *
+     * <p>Yang diperiksa isi tangan, bukan isi tas, karena itulah satu-satunya cara
+     * makanan berpindah ke entitas — dan pemain masih boleh menaiki apa pun sambil
+     * membawa bekalnya.</p>
+     */
+    @SubscribeEvent
+    public static void onEntityInteract(PlayerInteractEvent.EntityInteract event) {
+        if (event.getLevel().isClientSide || !GameManager.get().isRunning()) {
+            return;
+        }
+        if (!(event.getEntity() instanceof ServerPlayer player)) {
+            return;
+        }
+        if (!CafeteriaFood.isCafeteriaFood(event.getItemStack())) {
+            return;
+        }
+        event.setCanceled(true);
+        event.setCancellationResult(InteractionResult.SUCCESS);
+        refuseStash(player);
+    }
+
+    /**
+     * Penolakan disampaikan di baris status, bukan di chat: percobaan ini sering
+     * terjadi berkali-kali dalam sedetik (tombol klik kanan yang ditahan), dan chat
+     * yang membanjir bikin orang berhenti membaca chat sama sekali.
+     */
+    private static void refuseStash(ServerPlayer player) {
+        player.displayClientMessage(Component.translatable("message.jackofhearts.food_no_stash")
+                .withStyle(ChatFormatting.RED), true);
+        GameManager.get().muteStatusBar(player, 40);
     }
 
     /**

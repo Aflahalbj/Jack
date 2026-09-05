@@ -1,19 +1,25 @@
 package com.aflah.jackofhearts.client;
 
 import com.aflah.jackofhearts.JackOfHeartsMod;
+import com.aflah.jackofhearts.entity.MannequinEntity;
 import com.aflah.jackofhearts.item.SymbolArmorItem;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.CameraType;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.client.event.RenderHandEvent;
+import net.minecraftforge.client.event.RenderNameTagEvent;
 import net.minecraftforge.client.event.RenderPlayerEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+
+import java.util.UUID;
 
 @Mod.EventBusSubscriber(modid = JackOfHeartsMod.MOD_ID, value = Dist.CLIENT)
 public class ClientEvents {
@@ -98,11 +104,37 @@ public class ClientEvents {
         }
     }
 
+    /**
+     * Nama sesama Jack tergambar merah, dan cuma di layar Jack.
+     *
+     * <p>Yang menjaga rahasianya bukan pemeriksaan di sini, melainkan datanya: daftar
+     * Jack tidak pernah dikirim ke client yang bukan Jack, jadi di sana kumpulan ini
+     * selalu kosong dan tidak ada satu pun nama yang berubah warna.</p>
+     *
+     * <p>Badan pengganti peserta yang sedang offline ikut diwarnai lewat pemiliknya,
+     * bukan lewat UUID entitasnya sendiri — kalau tidak, rekan Jack yang kebetulan
+     * sedang keluar dari server justru jadi satu-satunya nama yang tidak merah.</p>
+     */
+    @SubscribeEvent
+    public static void onRenderNameTag(RenderNameTagEvent event) {
+        if (ClientGameState.jacks.isEmpty()) {
+            return;
+        }
+        Entity entity = event.getEntity();
+        UUID uuid = entity instanceof MannequinEntity mannequin ? mannequin.getOwner() : entity.getUUID();
+        if (ClientGameState.jacks.contains(uuid)) {
+            event.setContent(event.getContent().copy().withStyle(ChatFormatting.RED));
+        }
+    }
+
     @SubscribeEvent
     public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
         ClientGameState.reset();
         ClientLasers.clear();
         ClientRoster.reset();
         ClientCafeteria.reset();
+        // Skin yang diingat ikut dilupakan: sambungan berikutnya bisa ke server lain,
+        // dan di sana UUID yang sama belum tentu orang yang sama.
+        PlayerSkins.reset();
     }
 }

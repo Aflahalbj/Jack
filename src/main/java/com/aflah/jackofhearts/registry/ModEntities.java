@@ -2,6 +2,7 @@ package com.aflah.jackofhearts.registry;
 
 import com.aflah.jackofhearts.JackOfHeartsMod;
 import com.aflah.jackofhearts.entity.CorpseEntity;
+import com.aflah.jackofhearts.entity.MannequinEntity;
 import com.aflah.jackofhearts.entity.SeatEntity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
@@ -50,13 +51,40 @@ public class ModEntities {
                     .noSummon()
                     .build("corpse"));
 
+    /**
+     * Badan pengganti peserta yang sedang offline.
+     *
+     * <p>Jangkauan pemuatannya lebih jauh daripada mayat: badan ini berdiri diam
+     * sepanjang ronde dan orang harus bisa melihatnya dari seberang ruangan, sama
+     * seperti pemain sungguhan. Mayat cukup dekat karena dia cuma dilihat oleh yang
+     * kebetulan ada di tempat kejadian.</p>
+     *
+     * <p>{@code updateInterval(2)} sudah cukup: satu-satunya yang berubah selama
+     * hidupnya adalah arah hadap saat laser mengunci, dan client menginterpolasi
+     * putaran itu sendiri.</p>
+     *
+     * <p>{@code noSave()} berarti badan ini tidak pernah tersimpan ke disk. Permainan
+     * sendiri hidup di memori dan berhenti saat server dimatikan, jadi badan yang
+     * tersimpan akan bangkit sebagai sisa permainan yang sudah tidak ada.</p>
+     */
+    public static final RegistryObject<EntityType<MannequinEntity>> MANNEQUIN = ENTITIES.register("mannequin",
+            () -> EntityType.Builder.<MannequinEntity>of(MannequinEntity::new, MobCategory.MISC)
+                    .sized(0.6F, 1.8F)
+                    .clientTrackingRange(32)
+                    .updateInterval(2)
+                    .fireImmune()
+                    .noSave()
+                    .noSummon()
+                    .build("mannequin"));
+
     public static void register(IEventBus bus) {
         ENTITIES.register(bus);
         bus.addListener(ModEntities::onEntityAttributes);
     }
 
-    /** CorpseEntity itu LivingEntity, dan setiap LivingEntity wajib punya atribut. */
+    /** Keduanya LivingEntity, dan setiap LivingEntity wajib punya atribut. */
     private static void onEntityAttributes(EntityAttributeCreationEvent event) {
         event.put(CORPSE.get(), CorpseEntity.createAttributes().build());
+        event.put(MANNEQUIN.get(), MannequinEntity.createAttributes().build());
     }
 }

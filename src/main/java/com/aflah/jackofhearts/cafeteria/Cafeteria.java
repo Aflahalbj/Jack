@@ -273,6 +273,13 @@ public final class Cafeteria {
     /** Menata ulang meja dan mengisi stok untuk satu game baru. */
     @Nullable
     public Component start(MinecraftServer server, int playerCount) {
+        // Meja dipasang ulang dari schematic dulu, sebelum penataannya dibaca: yang
+        // dipakai sepanjang permainan harus isi schematic itu, bukan potret keadaan
+        // terakhir yang kebetulan sempat terbaca.
+        ServerLevel schematicLevel = level(server);
+        if (schematicLevel != null) {
+            pasteSchematic(server, schematicLevel);
+        }
         loadSpots(server);
         total = computeTotal(playerCount);
         stock = total;
@@ -301,6 +308,7 @@ public final class Cafeteria {
         spots.clear();
         onTable.clear();
         lastTake.clear();
+        FoodStash.clear();
         idleTimer = IDLE_SCAN_TICKS;
         sync();
     }
@@ -316,13 +324,63 @@ public final class Cafeteria {
         sync();
     }
 
-    private int computeTotal(int playerCount) {
-        int override = JackConfig.CONFIG.foodTotalOverride.get();
-        if (override > 0) {
-            return override;
+    /**
+     * Stok satu game: angka pasti dari {@code foodTotal}, atau kalau angkanya masih 0,
+     * jatah per pemain dikali jumlah pemain yang benar-benar ikut.
+     */
+    public static int computeTotal(int playerCount) {
+        int fixed = JackConfig.CONFIG.foodTotal.get();
+        if (fixed > 0) {
+            return fixed;
         }
-        return JackConfig.CONFIG.foodBase.get()
-                + JackConfig.CONFIG.foodPerPlayer.get() * Math.max(playerCount, 0);
+        return JackConfig.CONFIG.foodPerPlayer.get() * Math.max(playerCount, 0);
+    }
+
+    /**
+     * Pasang ulang meja dari schematic, lalu isi stoknya kembali penuh.
+     *
+     * <p>Isi meja hasil pemasangan itu langsung dijadikan penataan resminya, menimpa
+     * potret lama. Kalau tidak, pemulihan meja setelah permainan selesai akan menarik
+     * kembali susunan lama yang sudah tidak ada hubungannya dengan yang barusan
+     * dipasang.</p>
+     *
+     * @return jumlah porsi stok yang baru, 0 kalau tidak ada game berjalan, atau -1
+     *         kalau dunia kafetarianya sendiri tidak ketemu.
+     */
+    public int refill(MinecraftServer server, int playerCount) {
+        ServerLevel level = level(server);
+        if (level == null) {
+            return -1;
+        }
+        if (!pasteSchematic(server, level)) {
+            // Tanpa schematic, yang bisa dilakukan cuma memulihkan meja ke potret
+            // terakhir - itu tetap mengembalikan piring yang sudah termakan.
+            loadSpots(server);
+            restoreAll(server);
+        }
+        loadSpots(server);
+        if (!active) {
+            return 0;
+        }
+        total = computeTotal(playerCount);
+        stock = total;
+        enforce(server, null);
+        sync();
+        return total;
+    }
+
+    /**
+     * @return true kalau schematic-nya benar-benar terpasang, dan penataan meja sudah
+     *         diperbarui mengikuti isinya.
+     */
+    private boolean pasteSchematic(MinecraftServer server, ServerLevel level) {
+        int placed = FoodSchematic.paste(level);
+        if (placed <= 0) {
+            return false;
+        }
+        CafeteriaLayout.get(server).set(readArea(level));
+        JackOfHeartsMod.LOGGER.info("[JackOfHearts] Schematic makanan dipasang: {} blok.", placed);
+        return true;
     }
 
     // ------------------------------------------------------------------ pengambilan

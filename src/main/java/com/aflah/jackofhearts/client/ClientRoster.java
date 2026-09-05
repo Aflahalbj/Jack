@@ -41,6 +41,13 @@ public final class ClientRoster {
         List<Slot> next = new ArrayList<>(packet.entries().size());
         for (RosterPacket.Entry entry : packet.entries()) {
             next.add(new Slot(entry.uuid(), entry.name(), entry.dark()));
+            // Skin peserta diingat sekarang, selagi dia masih ada di daftar pemain.
+            // Papan ini memang selalu menggambar semua orang, jadi cepat atau lambat
+            // skinnya akan terbaca sendiri - tapi cuma kalau ada papan yang termuat.
+            // Pemain yang belum pernah melihat papan tidak punya apa-apa untuk
+            // diingat, dan badan pengganti peserta yang keluar akan berdiri dengan
+            // wajah orang asing.
+            PlayerSkins.remember(entry.uuid());
         }
         slots = List.copyOf(next);
     }

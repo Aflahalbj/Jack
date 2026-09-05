@@ -62,11 +62,34 @@ public final class HungerRules {
 
         float multiplier = JackConfig.CONFIG.hungerMultiplier.get().floatValue();
         float idlePerTick = JackConfig.CONFIG.hungerIdleDrain.get().floatValue() / 20.0F;
-        float extra = gained * (multiplier - 1.0F) + idlePerTick * multiplier;
+
+        // Tetesan diam itu LANTAI, bukan tambahan. Yang dipakai tiap tick adalah yang
+        // lebih besar antara exhaustion dari kegiatannya sendiri dan tetesan itu, lalu
+        // baru dikali.
+        //
+        // Bedanya penting. Kalau tetesannya dijumlahkan, yang berlari membayar dua kali
+        // - biaya larinya dikali, lalu ditambah lagi tetesan yang seharusnya cuma untuk
+        // yang tidak berbuat apa-apa - dan pengali yang dirasakan tiap orang jadi
+        // berbeda-beda tergantung seberapa aktif dia. Dengan lantai, pengalinya sama
+        // persis untuk semua orang, dan angka di config berarti apa adanya.
+        float extra = Math.max(gained, idlePerTick) * multiplier - gained;
         if (extra > 0.0F) {
             food.addExhaustion(extra);
         }
         LAST.put(uuid, food.getExhaustionLevel());
+    }
+
+    /**
+     * Terima nilai exhaustion pemain apa adanya sebagai titik awal perbandingan.
+     *
+     * <p>Dipakai saat exhaustion-nya baru saja diisikan dari luar — misalnya peserta
+     * yang kembali online dan perutnya dikembalikan dari hasil simulasi selama dia
+     * offline. Tanpa ini, selisih tick pertama dihitung terhadap nilai sebelum dia
+     * keluar, dan lonjakan sesaat itu ikut dikali sebagai "kegiatan" yang tidak pernah
+     * dia lakukan.</p>
+     */
+    public static void adopt(ServerPlayer player) {
+        LAST.put(player.getUUID(), player.getFoodData().getExhaustionLevel());
     }
 
     /** Kenyang penuh, saturasi vanilla, exhaustion nol. */

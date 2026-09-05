@@ -62,6 +62,18 @@ public class ModNetwork {
                 .consumerMainThread(PanelOffPacket::handle)
                 .add();
 
+        CHANNEL.messageBuilder(JackListPacket.class, nextId++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(JackListPacket::encode)
+                .decoder(JackListPacket::decode)
+                .consumerMainThread(JackListPacket::handle)
+                .add();
+
+        CHANNEL.messageBuilder(SkinDataPacket.class, nextId++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(SkinDataPacket::encode)
+                .decoder(SkinDataPacket::decode)
+                .consumerMainThread(SkinDataPacket::handle)
+                .add();
+
         CHANNEL.messageBuilder(CafeteriaPacket.class, nextId++, NetworkDirection.PLAY_TO_CLIENT)
                 .encoder(CafeteriaPacket::encode)
                 .decoder(CafeteriaPacket::decode)

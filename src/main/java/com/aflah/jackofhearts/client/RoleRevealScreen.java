@@ -454,10 +454,10 @@ public class RoleRevealScreen extends Screen {
         graphics.drawCenteredString(this.font,
                 Component.translatable("message.jackofhearts.your_role", role.getDisplayName()),
                 this.width / 2, y, alpha);
-        graphics.drawCenteredString(this.font,
-                Component.translatable("message.jackofhearts.role_hint_" + role.getId())
-                        .withStyle(ChatFormatting.GRAY),
-                this.width / 2, y + 14, alpha);
+        // graphics.drawCenteredString(this.font,
+        //         Component.translatable("message.jackofhearts.role_hint_" + role.getId())
+        //                 .withStyle(ChatFormatting.GRAY),
+        //         this.width / 2, y + 14, alpha);
     }
 
     /**

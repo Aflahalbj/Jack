@@ -27,12 +27,57 @@ Untuk uji coba langsung: `./gradlew runClient` atau `./gradlew runServer`.
 ## Aturan permainan
 
 ### Peran
-| Peran | Menang kalau |
+| Peran | Kalah kalau |
 |---|---|
-| **Ace** | Berhasil membunuh Jack, **atau** Jack belum membunuh siapa pun sampai akhir **ronde 3** |
-| **Jack** | Bertahan hidup sampai selesai **ronde 10**, **atau** semua Ace sudah mati |
+| **Jack** | Tidak ada satu pun peserta yang gugur selama **3 ronde beruntun** — Jack dieksekusi laser |
+| **Ace** | Semua Ace habis, atau Jack bertahan sampai selesai **ronde 10** |
 
-Semua ambang di atas bisa diubah lewat config (`aceWinRoundIfNoKill`, `jackWinRound`).
+Ambangnya bisa diubah lewat config (`maxDeathlessRounds`, `jackWinRound`).
+
+**Menang-kalahnya per tim.** Jack menang berarti semua Jack menang; Ace menang berarti
+semua Ace menang — termasuk yang sudah gugur di ronde dua, karena kemenangan itu
+dibangun dari tebakan-tebakan yang dia ikut bayar juga. Menghitungnya per orang berarti
+separuh pemenang diberi tahu bahwa mereka kalah.
+
+Kalau **semua orang mati**, yang menang **Jack**. Habisnya Ace diperiksa lebih dulu, dan
+urutan itu yang menentukan: permainan ini soal bertahan dari Jack, jadi ruangan yang
+habis tak bersisa bukan kemenangan pihak Ace.
+
+Layarnya: judul `Selamat` / `Yahahaha`, keterangan `Kamu menang` / `Kamu kalah`. Sesudah
+itu peran semua peserta dibuka di chat, satu orang satu baris.
+
+### Pengumuman kematian
+
+Siapa pun yang gugur diumumkan dengan satu kalimat yang sama: **`<nama> tereliminasi.`**
+Apa pun sebabnya, dari siapa pun, termasuk yang sedang offline.
+
+Caranya sengaja tidak disebut. Cara seseorang gugur adalah keterangan paling berharga di
+permainan ini — "salah menebak" berarti simbolnya sempat dipercaya orang, "kelaparan"
+berarti dia tidak kebagian meja, "tidak hadir" berarti dia sudah lama tidak ada. Semua
+itu petunjuk, dan chat bukan tempat membagikannya gratis ke semua orang.
+
+Yang bersangkutan sendiri tetap diberi tahu apa yang terjadi padanya, lewat pesan
+pribadi.
+
+### Tenggat Jack: harus ada yang gugur tiap 3 ronde
+
+Jack tidak bisa melukai siapa-siapa (lihat *Cuma lapar yang bisa melukai* di bawah),
+jadi yang dinilai dari Jack **bukan berapa orang yang dibunuhnya**, melainkan ada
+tidaknya korban sama sekali. Kerjanya membohongi orang supaya salah menebak simbolnya,
+atau membiarkan mereka kehabisan makanan — dan hasil kerja itu bentuknya cuma satu:
+ada yang gugur.
+
+Jadi hitungannya: **kalau tiga ronde beruntun lewat tanpa ada seorang pun yang gugur,
+apa pun sebabnya, Jack dieksekusi laser di akhir fase menebak — walaupun tebakannya
+sendiri benar.** Sesudah itu adegannya sama seperti eksekusi biasa: mayatnya ambruk,
+kamera pindah ke Papan Peserta, panelnya padam, baru layar menang/kalah muncul.
+
+Hitungannya berjalan lagi dari nol setiap kali ada yang gugur. Berhasil di ronde 2
+berarti tenggat berikutnya ronde 5, bukan ronde 3.
+
+Ronde tempat korbannya jatuh ikut terhitung sebagai ronde berkorban — termasuk korban
+yang baru akan ditembak beberapa detik kemudian. Kalau tidak, Jack yang baru saja
+berhasil justru dihukum tepat di detik keberhasilannya.
 
 ### Registrasi pemain
 
@@ -42,13 +87,32 @@ kamu tidak perlu menyusun ulang tiap mau main lagi.
 
 **Game selalu berpatok ke daftar ini, tidak pernah ke "siapa yang kebetulan online".**
 `/jack start` gagal kalau daftarnya kosong — supaya tidak ada yang ikut main tanpa
-sengaja hanya karena sedang login. Yang terdaftar tapi sedang offline dilewati, dan
-namanya dilaporkan ke pemanggil perintah.
+sengaja hanya karena sedang login.
 
-`/jack start <targets>` bukan jalur terpisah: ia **mengganti isi daftar** dengan target
-itu lalu memulai seperti biasa, jadi tetap satu sumber kebenaran.
+`/jack start` juga **gagal kalau ada satu saja pemain terdaftar yang sedang offline**,
+dan namanya disebutkan. Memulai tanpa dia berarti dia dicoret diam-diam dari daftar
+yang barusan disusun — dan itu baru ketahuan setelah peran dibagikan, saat sudah tidak
+bisa diulang. Suruh dia masuk dulu, atau keluarkan dari daftar dengan `/jack unregis`.
 
 `/jack listplayer` menampilkan isi daftar lengkap dengan status online/offline tiap orang.
+
+### Sesama Jack saling kenal
+
+Kalau Jack lebih dari satu, tiap Jack melihat **nama rekannya berwarna merah** di atas
+kepalanya. Ace melihat nama yang sama persis seperti biasa — putih.
+
+Yang menjaga rahasianya bukan pemeriksaan saat menggambar, melainkan pengirimannya:
+daftar Jack cuma dikirim ke client yang pemainnya memang Jack. Di client Ace daftar itu
+selalu kosong, jadi tidak ada apa pun di memorinya yang bisa dibaca ulang oleh client
+yang dimodifikasi.
+
+Daftarnya baru dikirim **setelah animasi kocok kartu selesai**. Nama merah yang muncul
+sementara kartunya masih berputar sama saja membocorkan hasilnya lebih dulu — dan
+dengan alasan yang sama, pesan `Peranmu: ...` di chat juga baru dikirim di situ.
+
+Badan pengganti peserta yang sedang offline ikut diwarnai lewat pemiliknya, jadi rekan
+Jack yang kebetulan sedang keluar dari server tidak jadi satu-satunya nama yang tidak
+merah.
 
 ### Pembagian peran
 
@@ -82,9 +146,81 @@ Atur lewat `roleRevealSeconds`. **Isi 0 untuk mematikan animasi** dan langsung m
 ronde 1 — berguna saat testing berulang. Nilai 1–7 otomatis dinaikkan ke 8, karena
 animasinya sendiri butuh 7,2 detik sampai kartunya selesai membalik.
 
+### Baris status di atas hotbar
+
+Selama ronde dan fase menebak, tiap peserta dapat satu baris di tempat pesan action
+bar:
+
+```
+Ronde 2 | 4:37 | 3/5
+```
+
+Ronde, sisa waktu, dan hasil pemungutan suara percepat ronde. Di fase menebak, bagian
+ketiga diganti hal yang paling menentukan detik itu — `Belum menebak!` atau
+`Tebakan: ♥` — karena di situ sudah tidak ada yang bisa dipercepat lagi. Yang sudah
+gugur melihat `TERELIMINASI`.
+
+Barisnya dikirim dari server sedetik sekali, bukan digambar client, supaya angka
+suaranya selalu sama dengan yang dipegang mesin game — client tidak pernah perlu tahu
+siapa saja yang sudah memilih. Pesan sekilas yang menumpang tempat yang sama
+(peringatan pintu sel membanting) menahan baris ini 3 detik supaya sempat dibaca.
+
+### Voting percepat ronde
+
+`/jack skip` bisa dipakai **semua pemain**, bukan cuma host — ini satu-satunya cabang
+`/jack` yang tidak butuh OP. Sekali lagi untuk membatalkan pilihan: satu-satunya cara
+menarik pilihan yang tidak bisa ditarik adalah menunggu ronde habis, padahal justru
+menunggu itu yang sedang dihindari.
+
+Begitu **semua** yang ditunggu sudah setuju, ronde langsung dipotong ke fase menebak.
+Suaranya dikosongkan tiap ronde baru.
+
+**Yang ditunggu = peserta hidup yang sedang online**, di pembilang maupun penyebut.
+Ini yang bikin voting-nya tahan pemain offline:
+
+- yang keluar dari server berhenti dihitung di kedua sisi, jadi dia tidak menahan ronde
+  berjalan terus sementara semua orang sudah setuju;
+- suaranya **tidak dihapus**, cuma berhenti dihitung — begitu dia masuk lagi, suaranya
+  kembali sendiri tanpa perlu memilih ulang;
+- kelengkapan suaranya diperiksa tiap tick, bukan cuma waktu ada yang memilih. Jumlah
+  yang ditunggu bisa berubah tanpa ada yang memilih apa pun (ada yang keluar, ada yang
+  gugur), dan justru perubahan itu yang sering melengkapi suaranya.
+
+Host tetap punya `/jack forceskip` untuk memotong fase apa pun tanpa menunggu suara.
+
+### Cuma lapar yang bisa melukai
+
+Selama game berjalan, **semua kerusakan ke pemain dibatalkan**: pukulan pemain lain,
+jatuh, api, mob, ledakan, semuanya. Yang tersisa cuma dua jalan keluar dari permainan
+ini — laser fase menebak, yang tidak pernah lewat sistem kerusakan sama sekali
+(korbannya langsung dijadikan penonton), dan perut yang kosong.
+
+Pembatalannya di `LivingAttackEvent`, bukan `LivingHurtEvent`, supaya seluruh
+kejadiannya batal: tidak ada dorongan, tidak ada kedipan merah, tidak ada bunyi
+kesakitan. Kerusakan yang setengah batal justru bikin orang mengira dia sedang
+kehabisan darah.
+
+Yang tetap lolos selain lapar cuma kerusakan yang menembus kekebalan apa pun — jatuh
+ke luar dunia dan `/kill`. Keduanya bukan bagian permainan: yang pertama tidak punya
+dasar untuk berhenti sendiri, yang kedua alat host yang harus tetap bisa dipakai kalau
+ada yang tersangkut.
+
+Karena itu Jack dinilai dari **ada tidaknya korban**, bukan dari jumlah orang yang
+dibunuhnya — lihat *Tenggat Jack* di atas.
+
+Yang kehabisan nyawa karena lapar **tidak benar-benar mati**: kematiannya dibatalkan dan
+orangnya langsung dijadikan penonton, persis seperti korban laser — tidak ada layar
+kematian, tidak ada isi tas yang tercecer, dan tidak ada respawn yang harus diurus.
+Nyawa dan perutnya dikembalikan penuh dulu, karena penonton bernyawa nol akan langsung
+mati lagi begitu mode permainannya dikembalikan nanti.
+
+Yang tertinggal di ruangan **mayatnya**, di tempat dia tumbang, tanpa laser dan tanpa
+adegan apa pun — bukan kekosongan yang tidak memberi tahu siapa pun apa yang barusan
+terjadi di situ.
+
 ### Alur satu ronde
 1. **Fase ronde** (default 10 menit) — pemain bebas bergerak. Jack berburu, Ace bertahan.
-2. **Fase menebak** (default 20 detik) — semua pemain hidup harus menebak simbol
+2. **Fase menebak** (default 30 detik) — semua pemain hidup harus menebak simbol
    di punggungnya sendiri lewat Terminal Tebakan di ruangan.
 3. **Resolusi** — yang benar aman, yang salah **atau tidak menebak sama sekali**
    ditembak laser dan tereliminasi jadi spectator. Lasernya satu tembakan: energi
@@ -231,6 +367,113 @@ punggung berganti-ganti dulu sebelum menetap — jadi terlihat sedang dikocok, b
 tiba-tiba berubah. Animasinya dipicu client sendiri saat nomor ronde di paket
 sinkronisasi berubah, jadi tidak perlu paket tambahan. Pemakainya sendiri tetap
 melihat kartu `?` sepanjang waktu.
+
+---
+
+## Pemain yang keluar di tengah permainan
+
+Peserta yang keluar tidak dihapus dari permainan. Di tempat dia berdiri terakhir
+kali muncul **badan pengganti** (mannequin): skinnya, namanya, dan seragamnya
+lengkap dengan simbol di punggung — jadi ruangan tetap berisi orang sebanyak yang
+tertulis di papan, dan simbolnya tetap bisa dilihat orang lain.
+
+Nametag-nya nama pemain plus tanda `[BOT]`, supaya tidak ada yang mengira dia
+pemain sungguhan yang sedang diam mengintai.
+
+### Apa yang bisa dan tidak bisa dilakukan ke badan itu
+
+Tidak ada. Badan pengganti tidak bisa dipukul, tidak bisa didorong, tidak
+menghalangi jalan, dan tidak menerima kerusakan dari sumber mana pun. Satu-satunya
+yang bisa menyentuhnya adalah laser fase menebak.
+
+### Lapar dan nyawa tetap jalan
+
+Perut pemiliknya tetap dihitung selama dia pergi, dengan aturan yang sama persis
+dengan peserta yang hadir — termasuk percepatan `hungerMultiplier` dan tetesan
+`hungerIdleDrain`. Kalau kenyangnya habis, dia mulai kehilangan nyawa mengikuti
+aturan kesulitan vanilla, dan bisa benar-benar mati di sana tanpa pernah kembali.
+
+Kalau lapar berhenti selama offline, keluar dari server jadi cara termurah untuk
+melewati kelaparan — dan kafetaria, yang seluruh tegangannya bertumpu pada stok
+makanan terbatas, kehilangan artinya.
+
+Angka lapar dan nyawa hasil hitungan itu ditimpakan ke pemainnya begitu dia masuk
+lagi.
+
+### Kalau fase menebak lewat sementara dia masih pergi
+
+Dia dihitung tidak menjawab, sama seperti peserta hadir yang tidak menebak.
+Terminal Tebakan mengunci badan penggantinya, badan itu menoleh ke arah sinarnya,
+lalu ditembak — mayatnya ambruk dengan animasi yang sama persis, dan panelnya di
+Papan Peserta padam dalam barisan yang sama dengan korban lain di ronde itu.
+
+Kalau chunk tempat badannya berdiri kebetulan tidak termuat, tidak ada yang bisa
+ditembak: dia tetap gugur, hanya tanpa adegan.
+
+### Waktu dia masuk lagi
+
+Badan penggantinya dibubarkan, dan:
+
+- **kalau masih hidup** — dia melanjutkan permainan dengan lapar dan nyawa yang
+  sudah berjalan selama dia pergi;
+- **kalau sudah gugur** — seragamnya dilepas dan dia langsung jadi penonton, karena
+  tidak ada layar kematian yang bisa memberitahunya.
+
+### Kalau yang pergi itu Jack: hitung mundur 90 detik
+
+Ace yang pergi cukup dihukum fase menebak berikutnya. Jack tidak — permainan berhenti
+berjalan kalau pemburunya tidak ada. Jadi begitu seorang Jack keluar, hitung mundur
+`jackOfflineSeconds` (bawaan 90 detik) mulai berjalan.
+
+Hitung mundurnya **cuma dicatat ke log server**, tidak pernah diumumkan ke pemain:
+pengumuman apa pun tentangnya — bahkan sekadar "ada yang sedang dihitung mundur" —
+sama saja mengumumkan siapa Jack, dan itu satu-satunya rahasia yang dijaga permainan
+ini.
+
+```
+[JackOfHearts] Jack Budi keluar dari server. Hitung mundur 90 detik sebelum dieksekusi laser.
+[JackOfHearts] Jack Budi masih offline: sisa 60 detik.
+[JackOfHearts] Jack Budi masih offline: sisa 30 detik.
+[JackOfHearts] Waktu habis: laser dari langit menembak badan Jack Budi.
+```
+
+Kalau waktunya habis, laser turun **dari langit** — bukan dari Terminal Tebakan,
+karena hukuman ini memang tidak datang dari ruang tebak mana pun. Badannya ambruk
+dengan animasi yang sama, dan panelnya padam.
+
+Masuk lagi kapan pun sebelum sinarnya benar-benar jatuh membatalkan semuanya,
+termasuk selama laser sudah mengisi daya — sinarnya tinggal memudar tanpa mengenai
+apa pun. Yang dituju aturan ini adalah Jack yang menghilang, bukan Jack yang
+koneksinya putus sebentar.
+
+#### Kalau itu Jack terakhir
+
+Permainan berakhir di situ, dan urutannya begini:
+
+1. laser jatuh, badannya ambruk;
+2. ~6,5 detik kemudian kamera **semua pemain** berpindah ke Papan Peserta;
+3. panelnya padam di depan mata mereka;
+4. barulah kemenangan Ace diumumkan.
+
+Kemenangannya sengaja ditahan sampai adegan papan selesai. Kalau diumumkan lebih
+dulu, layar kemenangan menutupi satu-satunya adegan yang menjelaskan **kenapa**
+permainannya berakhir.
+
+### Skin: kenapa UUID disimpan sejak pendaftaran
+
+Client mengambil skin dari daftar pemainnya sendiri, dan orang yang keluar hilang
+dari daftar itu — skinnya jatuh ke Steve/Alex. Padahal justru sesudah itu wajahnya
+paling dibutuhkan: di potret papan, di badan penggantinya, dan di mayatnya.
+
+Karena itu saat `/jack regis` (atau `regisall`, atau `/jack start`) server menyimpan
+UUID beserta properti skin dari profil pemain, lalu membagikannya ke semua client.
+Client juga mengingat sendiri setiap skin yang pernah dilihatnya. Titipan dari
+server itu yang menutupi kasus terakhir: pemain yang baru bergabung **setelah**
+orangnya keluar tidak pernah punya kesempatan melihatnya.
+
+> Properti skin cuma ada di server yang memverifikasi akun ke Mojang (online-mode).
+> Di server yang tidak, yang tersisa cuma ingatan masing-masing client dari saat
+> orangnya masih online.
 
 ---
 
@@ -495,14 +738,24 @@ ronde yang kamu mau.
 
 ### Berapa porsi untuk berapa pemain
 
-Stok satu game = `foodBase + foodPerPlayer × jumlah pemain`, bawaannya `4 + 5 × n`:
+Ada dua cara stok satu game dihitung, dan `/jack setting maxfood` yang memilihnya:
 
-| Pemain | Stok | Kira-kira habis di |
-|---|---|---|
-| 4 | 24 | ronde ~6 |
-| 8 | 44 | ronde ~5 |
-| 12 | 64 | ronde ~5 |
-| 16 | 84 | ronde ~5 |
+| Perintah | Stok satu game |
+|---|---|
+| `/jack setting maxfood default` | Kembali ke bawaan: **8 porsi × jumlah pemain** |
+| `/jack setting maxfood <porsi>` | **angka pasti**, berapa pun jumlah pemainnya |
+
+Dengan setelan bawaan: 2 pemain = 16 porsi, 4 pemain = 32, 8 pemain = 64, 12 pemain =
+96. Jumlah pemain yang dipakai adalah pemain yang **benar-benar ikut** saat
+`/jack start`, bukan jumlah yang terdaftar — yang sedang offline tidak makan.
+
+`default` mengembalikan **dua-duanya**: angka total dimatikan, dan jatah per pemain
+dikembalikan ke 8. Kalau cuma angka totalnya yang dimatikan, jatah per pemain yang
+pernah dipasang lewat versi lama perintah ini akan tertinggal di config — dan "default"
+jadi bukan default.
+
+Setelannya baru berlaku di game berikutnya. Untuk memberlakukannya sekarang juga,
+pakai `/jack refill`.
 
 Jalan hitungnya, biar gampang disetel ulang:
 
@@ -519,8 +772,7 @@ Jalan hitungnya, biar gampang disetel ulang:
    ±33 sampai ronde 3, ±44 sampai ronde 5. Stok 44 habis di sekitar situ.
 
 Habis sebelum permainan selesai itu **memang maunya**: kelangkaan makanan adalah
-tekanannya, dan ronde-ronde terakhir dijalani dengan perut kosong. Kalau mau
-kafetarianya bertahan sampai ronde 10, naikkan `foodPerPlayer` ke sekitar 8.
+tekanannya, dan ronde-ronde terakhir dijalani dengan perut kosong.
 
 Perlu diingat permainannya jarang benar-benar sampai ronde 10: begitu semua Ace mati
 atau Jack mati, permainannya selesai. Realistisnya **5–7 ronde ≈ 25–35 menit**, dan
@@ -531,8 +783,89 @@ angka di atas dihitung untuk itu.
 > Sebaliknya, kalau `roundSeconds` masih 600 (10 menit per ronde) permainannya dua kali
 > lebih panjang: kalikan dua `foodPerPlayer`.
 
-Jumlah pemain yang dipakai adalah pemain yang **benar-benar ikut** saat `/jack start`,
-bukan jumlah yang terdaftar — yang sedang offline tidak makan.
+### Meja dipasang ulang dari schematic
+
+Kafetaria ini memulihkan mejanya sendiri dari potret yang dibaca berkala, dan itu cukup
+untuk pemakaian biasa. Tapi potret cuma seakurat keadaan terakhir yang sempat terbaca:
+meja yang telanjur diobrak-abrik sebelum potretnya sempat diperbarui akan dipulihkan ke
+keadaan yang sama-sama berantakan.
+
+Karena itu meja bisa dipasang ulang dari **schematic**, dan isinya tidak pernah berubah
+lagi — tiap permainan mulai dari meja yang benar-benar sama.
+
+**Schematic bawaannya sudah ikut di dalam jar mod**
+(`data/jackofhearts/schematics/food.schem`), jadi tidak ada yang perlu disiapkan
+sebelum bermain. Untuk menggantinya tanpa membongkar jar, taruh berkas dengan nama
+yang sama di `config/jackofhearts/` — berkas di situ selalu menang.
+
+Nama berkas dan koordinatnya diatur di config:
+
+```toml
+foodSchematic = "food.schem"
+foodSchematicOrigin = "-4 1 -44"
+```
+
+`foodSchematicOrigin` adalah tempat mendaratnya **sudut schematic dengan koordinat
+paling kecil** (blok pertama di dalamnya). Kalau hasilnya meleset, geser angka ini —
+bukan schematic-nya.
+
+Yang dibaca format **Sponge Schematic** (`.schem` keluaran WorldEdit), versi 2 maupun 3.
+Format lama `.schematic` bawaan MCEdit tidak dibaca: isinya id blok berupa angka dari
+zaman sebelum blockstate, dan tidak ada lagi tabel yang bisa menerjemahkannya di 1.20.
+
+Blok udara di dalam schematic **ikut dipasang**, persis seperti `//paste` biasa. Itu
+yang membuat pemasangan ulang bisa diandalkan: piring yang tertinggal di luar susunan
+aslinya ikut tersapu, bukan menumpuk tiap kali dipasang lagi.
+
+Dipasang ulang di dua tempat:
+
+- **tiap `/jack start`**, sebelum penataan mejanya dibaca — yang dipakai sepanjang
+  permainan adalah isi schematic, bukan potret keadaan terakhir;
+- **tiap `/jack refill`**, sekalian mengisi stoknya kembali penuh dengan setelan
+  `maxfood` yang berlaku sekarang.
+
+Kalau berkasnya tidak ada, mod jatuh kembali ke potret berkala seperti biasa — tidak ada
+yang rusak, cuma tidak sekonsisten schematic.
+
+### Makanan tidak bisa dititipkan ke mana pun
+
+Batas bawa satu porsi (`foodCarryLimit`) adalah seluruh isi mekanik kafetaria: ambil
+satu, habiskan, baru boleh ambil lagi. Tanpa penjagaan tambahan batas itu tidak ada
+artinya — ambil satu, taruh di peti, ambil lagi, dan dalam semenit satu orang sudah
+memindahkan seluruh meja ke dalam kotaknya sendiri.
+
+Jadi selama permainan berjalan:
+
+- makanan kafetaria **tidak bisa dijatuhkan** — tombol Q maupun diseret keluar layar tas.
+  Barangnya **kembali ke tas**, bukan lenyap: membatalkan kejadian jatuhnya cuma menahan
+  barang itu masuk ke dunia, sedangkan dari tas dia sudah terlanjur dikeluarkan sebelum
+  kejadiannya dipicu. Tanpa dikembalikan, menjatuhkan makanan justru jadi cara paling
+  cepat menghabiskan stok;
+- makanan yang dititipkan ke **wadah apa pun** — peti, tungku, barrel, shulker, kotak
+  kerajinan — **balik lagi ke tas** dalam tick yang sama;
+- makanan kafetaria **tidak bisa diklik-kanankan ke entitas apa pun** — bingkai barang,
+  hewan, gerobak berpeti;
+- bekal yang dibawa ikut lenyap bersama pemiliknya kalau dia mati, jadi mati kelaparan
+  tidak bisa dipakai untuk menjatuhkan bekal buat orang lain.
+
+**Yang dikembalikan cuma yang baru masuk.** Patokannya isi wadah saat pertama dibuka:
+peti yang sudah ada rotinya sejak sebelum permainan dimulai adalah isi dunia, bukan
+hasil curian meja, dan tidak disentuh. Patokannya ikut turun kalau isinya berkurang, jadi
+mengambil roti yang memang sudah ada di peti itu tetap boleh.
+
+Pengecekannya jalan tiap tick, bukan saat kliknya, karena tidak ada kejadian klik slot
+yang bisa dicegat: Forge tidak menyediakannya, dan tiap wadah punya jalur pemindahannya
+sendiri (klik, geser, shift-klik, tombol angka). Memeriksa hasilnya tiap tick menangkap
+semuanya sekaligus.
+
+Penolakannya muncul di baris status, bukan chat: percobaannya sering terjadi berkali-
+kali dalam sedetik, dan chat yang membanjir bikin orang berhenti membaca chat sama
+sekali.
+
+**Mode kreatif tidak dikecualikan.** Selama permainan berjalan, host yang sedang kreatif
+tetap orang yang bisa memindahkan makanan ke peti, dan pengecualian itu justru
+satu-satunya lubang yang tersisa. Kalau memang perlu menata ulang dunia, hentikan dulu
+permainannya.
 
 ### Semua makanan bernilai sama
 
@@ -565,13 +898,31 @@ kegiatannya sendiri: berlari, melompat, memukul, menyembuhkan diri. Hasilnya per
 Tapi pengali saja tidak cukup, dan ini yang gampang terlewat: **di vanilla berjalan
 biasa memakan exhaustion nol**. Tiga kali nol tetap nol, jadi pemain yang cuma berjalan
 menyusuri lorong dan mengobrol tidak akan pernah lapar — dan kafetarianya tidak akan
-pernah didatangi siapa pun. Karena itu ada `hungerIdleDrain`: tetesan tetap per detik
-yang ikut dikali juga. Bawaannya 0,07 × 3,0 = 0,21/detik, artinya batang lapar penuh
-habis sekitar 6,3 menit walau pemainnya cuma berdiri diam.
+pernah didatangi siapa pun. Karena itu ada `hungerIdleDrain`.
+
+**`hungerIdleDrain` itu lantai, bukan tambahan.** Tiap tick yang dipakai adalah yang
+lebih besar antara exhaustion dari kegiatan pemain dan tetesan diam ini, lalu baru
+dikali `hungerMultiplier`:
+
+```
+drain = max(exhaustion kegiatan, hungerIdleDrain) × hungerMultiplier
+```
+
+Kalau tetesannya dijumlahkan (dan dulu memang begitu), yang berlari membayar dua kali —
+biaya larinya dikali, lalu ditambah lagi tetesan yang seharusnya cuma untuk yang tidak
+berbuat apa-apa. Pengali yang dirasakan tiap orang jadi berbeda-beda tergantung seberapa
+aktif dia. Dengan lantai, **pengalinya 3× untuk semua orang**, dan angka di config
+berarti apa adanya.
+
+Bawaannya 0,07 × 3,0 = 0,21/detik untuk yang diam, artinya batang lapar penuh habis
+sekitar 6,3 menit walau pemainnya cuma berdiri diam.
 
 Inilah satu-satunya angka yang menentukan cepat-lambatnya lapar buat pemain yang cuma
 jalan dan mengobrol — buat mereka sumber lapar yang lain hampir nol. Terlalu sering
 bolak-balik ke kafetaria? Turunkan ke 0,05. Masih terasa lambat? Naikkan ke 0,09.
+
+Ketiganya bisa disetel selagi server jalan: `/jack setting hungermultiplier <angka>`
+(boleh pecahan, mis. `2.5`) dan `/jack setting foodhunger <lapar> <saturasi>`.
 
 Lapar yang dipercepat cuma berlaku untuk **peserta yang masih hidup**, dan tidak
 berjalan selama fase reveal — layarnya mengunci input pemain, dan membuat orang yang
@@ -606,14 +957,50 @@ sedang mencari mangsa.
 | `/jack unregisall` | Kosongkan seluruh daftar |
 | `/jack listplayer` | Tampilkan daftar terdaftar + status online/offline |
 | `/jack start` | Kocok peran dan mulai game dengan pemain **terdaftar**; gagal kalau daftar kosong |
-| `/jack start <targets>` | Ganti isi daftar dengan target ini, lalu mulai |
+| `/jack setting setjack <targets> [once\|always]` | Pemain ini **pasti** dapat peran Jack; tanpa argumen = `once` |
+| `/jack setting unsetjack <targets>` | Batalkan penunjukan itu |
+| `/jack setting clearjack` | Kosongkan seluruh daftar setjack |
+| `/jack setting maxjack <angka>` | Berapa Jack yang dibagikan; tersimpan ke config |
+| `/jack refill` | Pasang ulang meja dari schematic dan isi stok penuh dengan `maxfood` terbaru |
+| `/jack setting maxfood <porsi>` | Stok satu game, angka pasti |
+| `/jack setting maxfood default` | Kembali ke bawaan: **8 porsi x jumlah pemain** |
+| `/jack setting settimer round <detik>` | Durasi satu ronde |
+| `/jack setting settimer guess <detik>` | Durasi fase menebak |
+| `/jack setting hungermultiplier <angka>` | Pengali kecepatan lapar; boleh pecahan (`2.5`) |
+| `/jack setting foodhunger <lapar> <saturasi>` | Nilai gizi satu porsi makanan kafetaria |
+| `/jack setting list` | Tampilkan setelan yang berlaku sekarang |
 | `/jack stop` | Hentikan game, lepas semua seragam |
 | `/jack status` | Fase, ronde, sisa waktu, dan daftar peserta + status hidup/mati |
-| `/jack skip` | Percepat fase yang sedang berjalan (buat testing) |
+| `/jack skip` | **Semua pemain.** Satu suara untuk mempercepat ronde ke fase menebak |
+| `/jack forceskip` | Host: potong sisa waktu fase yang sedang berjalan, tanpa menunggu siapa pun |
 | `/jack debug true\|false [<targets>]` | Tebakan sasaran dinilai **benar** untuk **ronde yang sedang berjalan saja** (buat testing); tanpa target = dirimu sendiri |
 | `/jack shuffle <pemain> [<jack>] [as_jack\|as_ace]` | Putar animasi kartu untuk preview, tanpa memulai game |
 | `/jack reveal` | Tampilkan peran + simbol semua peserta, hanya ke kamu (host) |
 | `/jack debugrole` | Daftar peran semua peserta dikelompokkan per peran, tanpa simbol |
+
+### `setjack` dan `maxjack`
+
+`maxjack` adalah batas yang **dinaikkan** oleh `setjack`, bukan yang membatasinya.
+Kalau `maxjack` 2 tapi ada 3 orang yang ditunjuk `setjack`, yang mengalah batasnya —
+game itu dibagikan 3 Jack. Menolak orang ketiga berarti perintah yang sudah
+dijalankan host diam-diam tidak berlaku, dan dia baru sadar setelah gamenya jalan.
+
+Yang ditunjuk pasti dapat Jack; sisa kursi Jack yang belum terisi tetap jatuh ke
+orang acak seperti biasa. Yang sedang offline atau jadi penonton saat `/jack start`
+tidak dihitung sama sekali.
+
+`once` (dan itu yang berlaku kalau argumennya tidak diisi) hangus begitu `/jack start`
+dijalankan — di detik penunjukannya terpakai, bukan saat gamenya selesai. Game yang
+dihentikan di tengah jalan tetap menghabiskan jatahnya, jadi "sekali" benar-benar
+berarti sekali. `always` bertahan sampai dibatalkan dengan `unsetjack`/`clearjack`.
+
+Yang harus diketik justru `always`, karena penunjukan yang berlaku selamanya adalah
+yang paling gampang dilupakan.
+
+Daftarnya tidak pernah diumumkan ke pemain mana pun. Sasarannya sendiri juga tidak diberi tahu:
+peran baru boleh diketahui pemiliknya lewat animasi pembagian peran, dan pesan "kamu
+dipilih jadi Jack" akan mendahuluinya sekaligus membocorkan ke siapa pun yang
+kebetulan melihat layarnya.
 
 ---
 

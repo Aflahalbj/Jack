@@ -7,18 +7,29 @@ public class JackConfig {
     public static final ForgeConfigSpec SPEC;
     public static final JackConfig CONFIG;
 
+    /**
+     * Porsi makanan per pemain, nilai bawaannya.
+     *
+     * <p>Ditulis sebagai konstanta, bukan cuma angka di dalam {@code defineInRange},
+     * karena {@code /jack setting maxfood default} harus bisa mengembalikannya - dan
+     * "default" yang tidak benar-benar mengembalikan angka bawaan cuma memindahkan
+     * kebingungan, bukan menghilangkannya.</p>
+     */
+    public static final int DEFAULT_FOOD_PER_PLAYER = 8;
+
     public final ForgeConfigSpec.IntValue roundSeconds;
     public final ForgeConfigSpec.IntValue guessSeconds;
     public final ForgeConfigSpec.IntValue roleRevealSeconds;
     public final ForgeConfigSpec.IntValue executionSeconds;
     public final ForgeConfigSpec.ConfigValue<String> roomMarkerBlock;
     public final ForgeConfigSpec.IntValue roomMarkerDepth;
-    public final ForgeConfigSpec.IntValue aceWinRoundIfNoKill;
+    public final ForgeConfigSpec.IntValue maxDeathlessRounds;
     public final ForgeConfigSpec.IntValue jackWinRound;
     public final ForgeConfigSpec.IntValue jackCount;
     public final ForgeConfigSpec.BooleanValue reshuffleSymbolsEachRound;
     public final ForgeConfigSpec.BooleanValue lockFirstPerson;
     public final ForgeConfigSpec.BooleanValue eliminateOnWrongGuess;
+    public final ForgeConfigSpec.IntValue jackOfflineSeconds;
 
     public final ForgeConfigSpec.DoubleValue hungerMultiplier;
     public final ForgeConfigSpec.DoubleValue hungerIdleDrain;
@@ -26,11 +37,12 @@ public class JackConfig {
     public final ForgeConfigSpec.BooleanValue uniformFood;
     public final ForgeConfigSpec.IntValue foodNutrition;
     public final ForgeConfigSpec.DoubleValue foodSaturation;
-    public final ForgeConfigSpec.IntValue foodBase;
     public final ForgeConfigSpec.IntValue foodPerPlayer;
-    public final ForgeConfigSpec.IntValue foodTotalOverride;
+    public final ForgeConfigSpec.IntValue foodTotal;
     public final ForgeConfigSpec.IntValue foodRefillPerRound;
     public final ForgeConfigSpec.IntValue foodCarryLimit;
+    public final ForgeConfigSpec.ConfigValue<String> foodSchematic;
+    public final ForgeConfigSpec.ConfigValue<String> foodSchematicOrigin;
     public final ForgeConfigSpec.ConfigValue<String> areaDimension;
     public final ForgeConfigSpec.ConfigValue<String> areaFrom;
     public final ForgeConfigSpec.ConfigValue<String> areaTo;
@@ -39,12 +51,14 @@ public class JackConfig {
         builder.comment("Pengaturan game Jack of Hearts").push("game");
 
         roundSeconds = builder
-                .comment("Durasi satu ronde bebas sebelum masuk fase menebak (detik).")
+                .comment("Durasi satu ronde bebas sebelum masuk fase menebak (detik).",
+                        "Bisa diubah selagi server jalan lewat /jack setting settimer round <detik>.")
                 .defineInRange("roundSeconds", 600, 10, 7200);
 
         guessSeconds = builder
-                .comment("Durasi fase menebak di ruangan (detik).")
-                .defineInRange("guessSeconds", 20, 5, 600);
+                .comment("Durasi fase menebak di ruangan (detik).",
+                        "Bisa diubah selagi server jalan lewat /jack setting settimer guess <detik>.")
+                .defineInRange("guessSeconds", 30, 5, 600);
 
         roleRevealSeconds = builder
                 .comment("Durasi animasi kocok kartu pembagian peran (detik). Isi 0 untuk mematikan",
@@ -71,9 +85,16 @@ public class JackConfig {
                         "di puncak lompatan tetap terhitung berada di dalam ruangan.")
                 .defineInRange("roomMarkerDepth", 4, 1, 16);
 
-        aceWinRoundIfNoKill = builder
-                .comment("Kalau Jack belum membunuh siapa pun sampai akhir ronde ini, Ace menang.")
-                .defineInRange("aceWinRoundIfNoKill", 3, 1, 100);
+        maxDeathlessRounds = builder
+                .comment("Berapa ronde beruntun boleh lewat tanpa ada satu pun peserta yang gugur",
+                        "sebelum Jack dieksekusi laser.",
+                        "Yang dihitung kematian siapa pun karena sebab apa pun - salah menebak",
+                        "simbol maupun kelaparan - bukan pembunuhan oleh tangan Jack, karena Jack",
+                        "memang tidak bisa melukai siapa-siapa. Tugas Jack adalah membuat orang",
+                        "salah menebak atau kehabisan makanan, dan hitungan inilah tenggatnya.",
+                        "Hitungannya berjalan lagi dari nol setiap kali ada yang gugur: berhasil",
+                        "di ronde 2 berarti tenggat berikutnya ronde 5.")
+                .defineInRange("maxDeathlessRounds", 3, 1, 100);
 
         jackWinRound = builder
                 .comment("Kalau Jack masih hidup setelah menyelesaikan ronde ini, Jack menang.")
@@ -96,6 +117,16 @@ public class JackConfig {
                 .comment("Salah menebak / tidak menebak = ditembak laser dan tereliminasi.")
                 .define("eliminateOnWrongGuess", true);
 
+        jackOfflineSeconds = builder
+                .comment("Berapa lama Jack boleh keluar dari server sebelum dieksekusi laser dari",
+                        "langit (detik). Aturan ini cuma berlaku untuk Jack: permainan berhenti",
+                        "berjalan kalau pemburunya tidak ada, sementara Ace yang pergi masih",
+                        "dihukum sendiri oleh fase menebak berikutnya.",
+                        "Hitung mundurnya tidak pernah diumumkan ke pemain - cuma ke log server -",
+                        "karena pengumuman apa pun tentangnya sama saja membocorkan siapa Jack.",
+                        "Isi 0 untuk mematikan aturan ini.")
+                .defineInRange("jackOfflineSeconds", 90, 0, 3600);
+
         builder.pop();
 
         builder.comment("Kafetaria: lapar dipercepat, dan stok makanan di meja kafetaria.").push("cafeteria");
@@ -109,12 +140,17 @@ public class JackConfig {
         hungerIdleDrain = builder
                 .comment("Exhaustion tambahan per detik untuk pemain yang tidak melakukan apa-apa,",
                         "dihitung sebelum dikali hungerMultiplier.",
+                        "Ini LANTAI, bukan tambahan: yang dipakai tiap tick adalah yang lebih besar",
+                        "antara exhaustion dari kegiatan pemain dan angka ini, lalu baru dikali",
+                        "hungerMultiplier. Jadi pengalinya sama persis untuk semua orang - yang",
+                        "berlari tidak membayar dua kali (kegiatannya plus tetesan diam).",
                         "Ini bukan hiasan: di vanilla berjalan biasa memakan exhaustion NOL, jadi",
                         "pengali seberapa pun tidak membuat pemain yang cuma berjalan dan mengobrol",
                         "jadi lapar - dan kafetarianya tidak akan pernah didatangi.",
                         "Inilah yang menentukan cepat-lambatnya lapar buat pemain yang cuma jalan",
                         "dan mengobrol, karena buat mereka sumber lapar yang lain hampir nol.",
-                        "Default 0.07 x 3.0 = 0.21/detik: batang lapar penuh habis sekitar 6,3",
+                        "Default 0.07 x 3.0 = 0.21/detik untuk yang diam: batang lapar penuh habis",
+                        "sekitar 6,3",
                         "menit walau pemainnya cuma berdiri diam. Turunkan ke 0.05 kalau terasa",
                         "terlalu sering bolak-balik, naikkan ke 0.09 kalau masih terasa lambat.")
                 .defineInRange("hungerIdleDrain", 0.07D, 0.0D, 1.0D);
@@ -138,7 +174,7 @@ public class JackConfig {
                 .comment("Isi lapar tiap makanan kafetaria (2 = satu paha ayam di HUD).",
                         "INI KENOP FREKUENSI, BUKAN KENOP KELANGKAAN. Yang diaturnya seberapa",
                         "sering satu pemain harus berjalan ke kafetaria; yang mengatur habis atau",
-                        "tidaknya makanan adalah foodBase/foodPerPlayer. Mengecilkan angka ini",
+                        "tidaknya makanan adalah maxfood. Mengecilkan angka ini",
                         "tanpa mengecilkan stok cuma melipatgandakan jumlah klik untuk hasil akhir",
                         "yang sama persis.",
                         "Default 6, bersama foodSaturation 0.8 = 6 lapar + 9,6 saturasi = 15,6",
@@ -152,28 +188,18 @@ public class JackConfig {
                         "Saturasi yang didapat = foodNutrition x nilai ini x 2.")
                 .defineInRange("foodSaturation", 0.8D, 0.0D, 2.0D);
 
-        foodBase = builder
-                .comment("Bagian tetap dari stok makanan satu game.")
-                .defineInRange("foodBase", 4, 0, 1000);
-
         foodPerPlayer = builder
-                .comment("Tambahan stok makanan per pemain yang ikut. INI KENOP KELANGKAAN.",
-                        "Stok = foodBase + foodPerPlayer x jumlah pemain. Dengan default 4 + 5:",
-                        "4 pemain = 24 porsi, 8 pemain = 44 porsi, 12 pemain = 64 porsi.",
-                        "Perhitungannya: satu pemain menghabiskan kira-kira satu porsi tiap 3 menit",
-                        "main aktif, dan jumlah pemain menyusut sepanjang permainan karena laser.",
-                        "Untuk ronde 5 menit, 44 porsi untuk 8 pemain habis sekitar ronde 5-6, jadi",
-                        "ronde-ronde terakhir dijalani dengan perut kosong - memang begitu maunya.",
-                        "Hitungannya berbasis MENIT, bukan ronde, jadi ronde yang dipotong lebih",
-                        "cepat otomatis membuat stok yang sama menutup lebih banyak ronde.",
-                        "PENTING: kalau roundSeconds masih 600 (10 menit per ronde), permainannya",
-                        "dua kali lebih panjang dan angka ini perlu dinaikkan kira-kira dua kali.")
-                .defineInRange("foodPerPlayer", 5, 0, 100);
+                .comment("Porsi makanan per pemain, dipakai kalau foodTotal masih 0.",
+                        "Default 8: 2 pemain = 16 porsi, 8 pemain = 64 porsi.",
+                        "Kembali ke perhitungan ini kapan saja lewat /jack setting maxfood default.")
+                .defineInRange("foodPerPlayer", DEFAULT_FOOD_PER_PLAYER, 0, 100);
 
-        foodTotalOverride = builder
-                .comment("Kalau diisi lebih dari 0, stok makanan dipaksa ke angka ini dan rumus",
-                        "foodBase/foodPerPlayer diabaikan.")
-                .defineInRange("foodTotalOverride", 0, 0, 10000);
+        foodTotal = builder
+                .comment("Stok makanan satu game, angka pasti - tidak peduli ada berapa pemain.",
+                        "Isi 0 untuk memakai foodPerPlayer x jumlah pemain.",
+                        "Disetel lewat /jack setting maxfood <porsi>, dan dikembalikan ke hitungan",
+                        "per pemain lewat /jack setting maxfood default.")
+                .defineInRange("foodTotal", 0, 0, 10000);
 
         foodRefillPerRound = builder
                 .comment("Stok yang ditambahkan tiap ronde baru dimulai, dibatasi stok awal.",
@@ -188,6 +214,23 @@ public class JackConfig {
                         "datang dan sisa pemain lain kelaparan tanpa pernah punya kesempatan.",
                         "Isi 0 untuk mematikan batasnya.")
                 .defineInRange("foodCarryLimit", 1, 0, 64);
+
+        foodSchematic = builder
+                .comment("Nama berkas schematic meja makanan, dicari di config/jackofhearts/.",
+                        "Dipasang ulang tiap /jack start dan tiap /jack refill, jadi tiap permainan",
+                        "dimulai dari meja yang benar-benar sama - bukan dari potret keadaan",
+                        "terakhir yang kebetulan sempat terbaca.",
+                        "Format Sponge Schematic (.schem keluaran WorldEdit), versi 2 maupun 3.",
+                        "Blok udara di dalamnya ikut dipasang, persis seperti //paste biasa: itu",
+                        "yang membuat piring nyasar ikut tersapu, bukan menumpuk.",
+                        "Kosongkan untuk mematikan pemasangan schematic sama sekali.")
+                .define("foodSchematic", "food.schem");
+
+        foodSchematicOrigin = builder
+                .comment("Koordinat sudut schematic yang paling kecil (x y z).",
+                        "Blok pertama di dalam schematic mendarat tepat di sini, jadi kalau",
+                        "hasilnya meleset, geser angka ini - bukan schematic-nya.")
+                .define("foodSchematicOrigin", "-4 1 -43");
 
         areaDimension = builder
                 .comment("Dimensi tempat meja kafetaria berada.")

@@ -3,12 +3,15 @@ package com.aflah.jackofhearts.client;
 import com.aflah.jackofhearts.game.GamePhase;
 import com.aflah.jackofhearts.game.Role;
 import com.aflah.jackofhearts.game.Symbol;
+import com.aflah.jackofhearts.network.JackListPacket;
 import com.aflah.jackofhearts.network.OpenGuessScreenPacket;
 import com.aflah.jackofhearts.network.OpenRoleRevealPacket;
 import com.aflah.jackofhearts.network.SyncStatePacket;
 import net.minecraft.client.Minecraft;
 
 import javax.annotation.Nullable;
+import java.util.Set;
+import java.util.UUID;
 
 /** Salinan state game di client, cuma untuk HUD, GUI, dan kunci kamera. */
 public class ClientGameState {
@@ -24,6 +27,14 @@ public class ClientGameState {
     public static Symbol savedGuess;
     /** Sisa waktu animasi kocok simbol di punggung baju, dalam tick. */
     public static int symbolShuffleTicks;
+    /**
+     * Sesama Jack, kalau pemain ini sendiri Jack.
+     *
+     * <p>Selalu kosong di client Ace: daftarnya memang tidak pernah dikirim ke sana.
+     * Jadi tidak ada yang perlu disembunyikan saat menggambar — yang tidak ada tidak
+     * bisa bocor.</p>
+     */
+    public static Set<UUID> jacks = Set.of();
 
     /** Lamanya simbol di punggung berganti-ganti setiap ronde baru. */
     private static final int SYMBOL_SHUFFLE_TICKS = 30;
@@ -41,6 +52,10 @@ public class ClientGameState {
         lockView = packet.lockView();
         role = packet.role() >= 0 ? Role.values()[packet.role()] : null;
         savedGuess = Symbol.byOrdinal(packet.savedGuess());
+    }
+
+    public static void acceptJacks(JackListPacket packet) {
+        jacks = Set.copyOf(packet.jacks());
     }
 
     public static void openRoleRevealScreen(OpenRoleRevealPacket packet) {
@@ -84,6 +99,7 @@ public class ClientGameState {
         role = null;
         savedGuess = null;
         symbolShuffleTicks = 0;
+        jacks = Set.of();
     }
 
     public static int secondsLeft() {

@@ -241,6 +241,9 @@ public class PrisonDoorBlock extends DoorBlock {
         player.displayClientMessage(
                 Component.translatable("message.jackofhearts.prison_door.slammed").withStyle(ChatFormatting.RED),
                 true);
+        // Tempatnya sama dengan baris status game, dan baris itu dikirim ulang tiap
+        // detik. Tanpa jeda ini, peringatannya tertimpa sebelum sempat dibaca.
+        GameManager.get().muteStatusBar(player, 60);
     }
 
     @Override
