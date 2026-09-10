@@ -1,6 +1,7 @@
 package com.aflah.jackofhearts.registry;
 
 import com.aflah.jackofhearts.JackOfHeartsMod;
+import com.aflah.jackofhearts.item.ContainerMarkerItem;
 import com.aflah.jackofhearts.item.SymbolArmorItem;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.Item;
@@ -21,6 +22,13 @@ public class ModItems {
     public static final RegistryObject<Item> UNIFORM_PANTS = ITEMS.register("uniform_pants",
             () -> new SymbolArmorItem(ArmorItem.Type.LEGGINGS,
                     new Item.Properties().rarity(Rarity.RARE).fireResistant()));
+
+    /**
+     * Penanda wadah: menunjuk peti/tungku/dispenser/hopper/tong sebagai tempat susu.
+     * Alat penyusun map, bukan barang permainan.
+     */
+    public static final RegistryObject<Item> CONTAINER_MARKER = ITEMS.register("container_marker",
+            () -> new ContainerMarkerItem(new Item.Properties().stacksTo(1).rarity(Rarity.UNCOMMON)));
 
     public static void register(IEventBus bus) {
         ITEMS.register(bus);

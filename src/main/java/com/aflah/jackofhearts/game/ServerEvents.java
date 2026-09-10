@@ -6,13 +6,17 @@ import com.aflah.jackofhearts.cafeteria.Cafeteria;
 import com.aflah.jackofhearts.cafeteria.CafeteriaFood;
 import com.aflah.jackofhearts.cafeteria.FoodStash;
 import com.aflah.jackofhearts.command.JackCommand;
+import com.aflah.jackofhearts.config.JackConfig;
 import com.aflah.jackofhearts.item.SymbolArmorItem;
+import com.aflah.jackofhearts.registry.ModItems;
+import net.minecraft.world.item.Items;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.damagesource.DamageTypes;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
@@ -22,13 +26,17 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.event.entity.item.ItemTossEvent;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraftforge.event.entity.living.LivingAttackEvent;
+import net.minecraftforge.event.entity.living.LivingEntityUseItemEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.event.level.ChunkEvent;
+import net.minecraftforge.event.server.ServerAboutToStartEvent;
 import net.minecraftforge.event.server.ServerStartedEvent;
 import net.minecraftforge.event.server.ServerStoppingEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -87,6 +95,30 @@ public class ServerEvents {
      * ada respawn yang harus diurus. Yang tertinggal di ruangan mayatnya, bukan
      * kekosongan.</p>
      */
+    /**
+     * Tidak ada mob yang boleh masuk arena.
+     *
+     * <p>Diperiksa saat entitasnya <b>bergabung ke dunia</b>, bukan saat spawn alaminya
+     * dinilai. Spawn alami cuma satu dari banyak jalan masuk: spawner, telur, telur
+     * penyu, ternak yang beranak, dan {@code /summon} tidak melewati pemeriksaan itu sama
+     * sekali. Satu pintu yang dijaga lebih murah dan lebih rapat daripada lima.</p>
+     *
+     * <p>Yang disaring cuma {@link Mob}. Mayat, badan pengganti, kursi, dan kamera
+     * sinematik semuanya bukan Mob — mereka entitas milik permainan ini sendiri, dan
+     * memang harus bisa masuk.</p>
+     */
+    @SubscribeEvent
+    public static void onEntityJoin(EntityJoinLevelEvent event) {
+        if (!JackConfig.CONFIG.arenaNoMobs.get()
+                || event.getLevel().isClientSide
+                || !(event.getEntity() instanceof Mob)) {
+            return;
+        }
+        if (event.getLevel().dimension().equals(Arena.key())) {
+            event.setCanceled(true);
+        }
+    }
+
     @SubscribeEvent
     public static void onDeath(LivingDeathEvent event) {
         if (event.getEntity() instanceof ServerPlayer player
@@ -134,7 +166,8 @@ public class ServerEvents {
             return;
         }
         ItemStack stack = event.getEntity().getItem();
-        if (!(stack.getItem() instanceof SymbolArmorItem) && !CafeteriaFood.isCafeteriaFood(stack)) {
+        if (!(stack.getItem() instanceof SymbolArmorItem)
+                && !CafeteriaFood.isCafeteriaFood(stack)) {
             return;
         }
         event.setCanceled(true);
@@ -154,15 +187,14 @@ public class ServerEvents {
      * <p>Diperiksa tiap tick, bukan saat kliknya, karena tidak ada kejadian klik slot
      * yang bisa dicegat - lihat {@link FoodStash}.</p>
      *
-     * <p>Mode kreatif <b>tidak</b> dikecualikan. Selama permainan berjalan, host yang
-     * sedang kreatif tetap orang yang bisa memindahkan makanan ke peti, dan pengecualian
-     * itu justru satu-satunya lubang yang tersisa. Kalau memang perlu menata ulang
-     * dunia, hentikan dulu permainannya.</p>
+     * <p>Mode kreatif dikecualikan, supaya host masih bisa menata dunia sambil
+     * permainannya berjalan.</p>
      */
     @SubscribeEvent
     public static void onPlayerTick(TickEvent.PlayerTickEvent event) {
         if (event.phase != TickEvent.Phase.END
                 || !(event.player instanceof ServerPlayer player)
+                || player.isCreative()
                 || !GameManager.get().isRunning()) {
             return;
         }
@@ -184,7 +216,7 @@ public class ServerEvents {
         if (event.getLevel().isClientSide || !GameManager.get().isRunning()) {
             return;
         }
-        if (!(event.getEntity() instanceof ServerPlayer player)) {
+        if (!(event.getEntity() instanceof ServerPlayer player) || player.isCreative()) {
             return;
         }
         if (!CafeteriaFood.isCafeteriaFood(event.getItemStack())) {
@@ -229,9 +261,59 @@ public class ServerEvents {
             return;
         }
         BlockState state = event.getLevel().getBlockState(event.getPos());
+
+        // Tong cuma boleh dibuka di fase menebak. Tong berdiri di ruang tebak, dan
+        // ruangan itu memang cuma bisa dimasuki di fase itu - tanpa penjagaan ini,
+        // susunya bisa disapu lebih dulu lewat celah pintu yang kebetulan terbuka.
+        //
+        // Mode kreatif TIDAK dikecualikan: selama permainan berjalan, host yang sedang
+        // kreatif tetap orang yang bisa mengosongkan tong lebih dulu. Yang dikecualikan
+        // cuma Penanda Wadah, karena menandai tong memang harus bisa dilakukan kapan
+        // saja.
+        if (MilkSupply.isBarrel(state) && GameManager.get().isRunning()
+                && GameManager.get().getPhase() != GamePhase.GUESS
+                && !event.getItemStack().is(ModItems.CONTAINER_MARKER.get())) {
+            player.displayClientMessage(Component.translatable("message.jackofhearts.barrel_locked")
+                    .withStyle(ChatFormatting.RED), true);
+            GameManager.get().muteStatusBar(player, 40);
+            event.setCanceled(true);
+            event.setCancellationResult(InteractionResult.SUCCESS);
+            return;
+        }
+
         if (Cafeteria.get().take(player, event.getPos(), state)) {
             event.setCanceled(true);
             event.setCancellationResult(InteractionResult.SUCCESS);
+        }
+    }
+
+    /**
+     * Porsi yang diracuni Jack (skill racun, tombol P) baru bekerja saat benar-benar ditelan.
+     *
+     * <p>Diperiksa saat makannya selesai, bukan saat mulai: makan yang dibatalkan di
+     * tengah jalan tidak menghabiskan makanannya, dan tidak semestinya menghabiskan
+     * korbannya juga.</p>
+     */
+    @SubscribeEvent
+    public static void onFinishEating(LivingEntityUseItemEvent.Finish event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) {
+            return;
+        }
+        // Susu adalah penawarnya: racun, mabuk, dan lapar hilang sekaligus. Satu
+        // gelas menghapus ketiganya, dan itu disengaja - yang minum tidak pernah tahu
+        // pasti sedang kena yang mana.
+        if (event.getItem().is(Items.MILK_BUCKET)) {
+            String cured = GameManager.get().cure(player);
+            if (cured != null) {
+                player.sendSystemMessage(Component.translatable("message.jackofhearts.milk_cured",
+                                Component.translatable("affliction.jackofhearts." + cured))
+                        .withStyle(ChatFormatting.GREEN));
+            }
+            return;
+        }
+        CompoundTag tag = event.getItem().getTag();
+        if (tag != null && tag.getBoolean(Cafeteria.POISON_TAG)) {
+            GameManager.get().onPoisonedFoodEaten(player);
         }
     }
 
@@ -279,6 +361,17 @@ public class ServerEvents {
      * dan tanpa pemulihan di sini pembacaan berkala akan menyimpan kekosongan itu
      * sebagai penataan resminya.</p>
      */
+    /**
+     * Map arena dipasang sebelum server memuat dunia mana pun.
+     *
+     * <p>Waktunya menentukan: kalau dipasang belakangan, chunk arena yang sudah terlanjur
+     * dibuat sebagai void akan menang dan berkas region bawaannya tidak pernah terbaca.</p>
+     */
+    @SubscribeEvent
+    public static void onServerAboutToStart(ServerAboutToStartEvent event) {
+        ArenaWorld.install(event.getServer());
+    }
+
     @SubscribeEvent
     public static void onServerStarted(ServerStartedEvent event) {
         Cafeteria.get().onServerStarted(event.getServer());

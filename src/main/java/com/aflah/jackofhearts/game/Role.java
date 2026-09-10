@@ -5,7 +5,12 @@ import net.minecraft.network.chat.Component;
 
 public enum Role {
     JACK("jack", ChatFormatting.DARK_RED),
-    ACE("ace", ChatFormatting.AQUA);
+    ACE("ace", ChatFormatting.AQUA),
+    /**
+     * Belum punya pihak. Pihaknya ditentukan oleh siapa yang habis lebih dulu, lihat
+     * {@link PlayerData#allegiance}.
+     */
+    UNKNOWN("unknown", ChatFormatting.DARK_PURPLE);
 
     private final String id;
     private final ChatFormatting color;
@@ -25,5 +30,10 @@ public enum Role {
 
     public Component getDisplayName() {
         return Component.translatable("role.jackofhearts." + id).withStyle(color);
+    }
+
+    public static Role byOrdinal(int ordinal) {
+        Role[] values = values();
+        return ordinal >= 0 && ordinal < values.length ? values[ordinal] : ACE;
     }
 }

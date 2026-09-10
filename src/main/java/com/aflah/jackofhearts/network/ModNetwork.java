@@ -80,11 +80,27 @@ public class ModNetwork {
                 .consumerMainThread(CafeteriaPacket::handle)
                 .add();
 
+        CHANNEL.messageBuilder(SkillStatePacket.class, nextId++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(SkillStatePacket::encode)
+                .decoder(SkillStatePacket::decode)
+                .consumerMainThread(SkillStatePacket::handle)
+                .add();
+
+        CHANNEL.messageBuilder(UseSkillPacket.class, nextId++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(UseSkillPacket::encode)
+                .decoder(UseSkillPacket::decode)
+                .consumerMainThread(UseSkillPacket::handle)
+                .add();
+
         CHANNEL.messageBuilder(SubmitGuessPacket.class, nextId++, NetworkDirection.PLAY_TO_SERVER)
                 .encoder(SubmitGuessPacket::encode)
                 .decoder(SubmitGuessPacket::decode)
                 .consumerMainThread(SubmitGuessPacket::handle)
                 .add();
+    }
+
+    public static void toServer(Object packet) {
+        CHANNEL.sendToServer(packet);
     }
 
     public static void toPlayer(ServerPlayer player, Object packet) {

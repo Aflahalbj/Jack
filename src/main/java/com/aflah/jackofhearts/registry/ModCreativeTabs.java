@@ -20,6 +20,7 @@ public class ModCreativeTabs {
                     .displayItems((params, output) -> {
                         output.accept(ModItems.UNIFORM_SHIRT.get());
                         output.accept(ModItems.UNIFORM_PANTS.get());
+                        output.accept(ModItems.CONTAINER_MARKER.get());
                         output.accept(ModBlocks.GUESS_BLOCK.get());
                         output.accept(ModBlocks.MONITOR.get());
                         output.accept(ModBlocks.MONITOR_FRAME.get());

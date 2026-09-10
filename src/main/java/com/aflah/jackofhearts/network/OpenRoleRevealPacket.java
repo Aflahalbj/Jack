@@ -14,7 +14,8 @@ import java.util.function.Supplier;
  * <p>{@code cardCount} dan {@code jackCards} adalah jumlah kartu yang benar-benar
  * <b>digambar</b>, sudah dibatasi {@code MAX_LINEUP_CARDS}. {@code totalPlayers} dan
  * {@code totalJacks} adalah angka sebenarnya tanpa batas, dipakai untuk teks di bawah
- * barisan — jadi tulisannya tetap jujur walau kartunya tidak semuanya muat.</p>
+ * barisan — jadi tulisannya tetap jujur walau kartunya tidak semuanya muat. Pasangan
+ * {@code unknownCards}/{@code totalUnknowns} sama persis, untuk kartu Unknown.</p>
  *
  * <p>{@code preview} menandai pemutaran dari {@code /jack shuffle} yang tidak terikat
  * game apa pun. Layar biasa menutup sendiri saat server melapor fase sudah bukan
@@ -22,11 +23,13 @@ import java.util.function.Supplier;
  * tertutup di tick pertama.</p>
  */
 public record OpenRoleRevealPacket(int role, int ticksLeft, int cardCount, int jackCards,
-                                   int totalPlayers, int totalJacks, boolean preview) {
+                                   int unknownCards, int totalPlayers, int totalJacks,
+                                   int totalUnknowns, boolean preview) {
 
     public static OpenRoleRevealPacket decode(FriendlyByteBuf buf) {
         return new OpenRoleRevealPacket(buf.readVarInt(), buf.readVarInt(), buf.readVarInt(),
-                buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readBoolean());
+                buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(),
+                buf.readVarInt(), buf.readBoolean());
     }
 
     public void encode(FriendlyByteBuf buf) {
@@ -34,8 +37,10 @@ public record OpenRoleRevealPacket(int role, int ticksLeft, int cardCount, int j
         buf.writeVarInt(ticksLeft);
         buf.writeVarInt(cardCount);
         buf.writeVarInt(jackCards);
+        buf.writeVarInt(unknownCards);
         buf.writeVarInt(totalPlayers);
         buf.writeVarInt(totalJacks);
+        buf.writeVarInt(totalUnknowns);
         buf.writeBoolean(preview);
     }
 

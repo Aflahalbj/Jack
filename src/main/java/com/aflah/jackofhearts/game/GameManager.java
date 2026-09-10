@@ -17,6 +17,7 @@ import com.aflah.jackofhearts.network.JackListPacket;
 import com.aflah.jackofhearts.network.LaserPacket;
 import com.aflah.jackofhearts.network.PanelOffPacket;
 import com.aflah.jackofhearts.network.RosterPacket;
+import com.aflah.jackofhearts.network.SkillStatePacket;
 import com.aflah.jackofhearts.network.SkinDataPacket;
 import com.aflah.jackofhearts.network.OpenGuessScreenPacket;
 import com.aflah.jackofhearts.network.OpenRoleRevealPacket;
@@ -43,6 +44,7 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.Difficulty;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.commands.arguments.EntityAnchorArgument;
@@ -52,7 +54,10 @@ import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.core.NonNullList;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.level.ClipContext;
@@ -63,6 +68,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.pathfinder.PathComputationType;
+import net.minecraftforge.common.ForgeMod;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.GameType;
@@ -117,10 +123,15 @@ public class GameManager {
      * <p>Isinya tidak pernah diumumkan ke pemain mana pun. Sama seperti peran itu
      * sendiri, ini rahasia host.</p>
      */
-    private final Map<UUID, ForcedJack> forcedJacks = new LinkedHashMap<>();
+    private final Map<UUID, Forced> forcedJacks = new LinkedHashMap<>();
+    /**
+     * Peserta yang dipaksa jadi Unknown di game berikutnya. Aturannya sama persis dengan
+     * {@link #forcedJacks}; satu orang cuma bisa ada di salah satu daftar.
+     */
+    private final Map<UUID, Forced> forcedUnknowns = new LinkedHashMap<>();
 
     /**
-     * Satu penunjukan Jack.
+     * Satu penunjukan peran.
      *
      * @param always true berarti berlaku terus sampai dibatalkan; false berarti cuma
      *               untuk satu game — dan penunjukannya hangus begitu game itu dimulai,
@@ -128,7 +139,7 @@ public class GameManager {
      *               dihentikan di tengah jalan: yang sudah terpakai tetap hangus, jadi
      *               "sekali" benar-benar berarti sekali.
      */
-    public record ForcedJack(String name, boolean always) {
+    public record Forced(String name, boolean always) {
     }
     /**
      * Peserta yang tebakannya selalu dinilai benar. Murni alat testing (/jack debug
@@ -434,25 +445,39 @@ public class GameManager {
         return alwaysCorrect.contains(uuid);
     }
 
-    /** @return true kalau penunjukannya baru, atau jangka waktunya berubah. */
-    public boolean setForcedJack(ServerPlayer player, boolean always) {
-        ForcedJack previous = forcedJacks.put(player.getUUID(),
-                new ForcedJack(player.getGameProfile().getName(), always));
+    /** Daftar penunjukan untuk satu peran. Cuma Jack dan Unknown yang bisa ditunjuk. */
+    private Map<UUID, Forced> forcedMap(Role role) {
+        return role == Role.UNKNOWN ? forcedUnknowns : forcedJacks;
+    }
+
+    /**
+     * Menunjuk pemain untuk satu peran di game berikutnya.
+     *
+     * <p>Penunjukan di peran lain ikut dicabut: satu orang tidak bisa dipaksa jadi Jack
+     * sekaligus Unknown, dan yang terakhir diketik host adalah yang dia maksud.</p>
+     *
+     * @return true kalau penunjukannya baru, atau jangka waktunya berubah.
+     */
+    public boolean setForced(Role role, ServerPlayer player, boolean always) {
+        forcedMap(role == Role.UNKNOWN ? Role.JACK : Role.UNKNOWN).remove(player.getUUID());
+        Forced previous = forcedMap(role).put(player.getUUID(),
+                new Forced(player.getGameProfile().getName(), always));
         return previous == null || previous.always() != always;
     }
 
-    /** @return true kalau pemain ini memang sedang ditunjuk. */
-    public boolean unsetForcedJack(ServerPlayer player) {
-        return forcedJacks.remove(player.getUUID()) != null;
+    /** @return true kalau pemain ini memang sedang ditunjuk untuk peran itu. */
+    public boolean unsetForced(Role role, ServerPlayer player) {
+        return forcedMap(role).remove(player.getUUID()) != null;
     }
 
-    public Map<UUID, ForcedJack> getForcedJacks() {
-        return Collections.unmodifiableMap(forcedJacks);
+    public Map<UUID, Forced> getForced(Role role) {
+        return Collections.unmodifiableMap(forcedMap(role));
     }
 
-    public int clearForcedJacks() {
-        int size = forcedJacks.size();
-        forcedJacks.clear();
+    public int clearForced(Role role) {
+        Map<UUID, Forced> map = forcedMap(role);
+        int size = map.size();
+        map.clear();
         return size;
     }
 
@@ -469,6 +494,28 @@ public class GameManager {
      */
     public static int jackCountFor(int forcedInPool) {
         return Math.max(JackConfig.CONFIG.jackCount.get(), forcedInPool);
+    }
+
+    /**
+     * Berapa Unknown yang benar-benar dibagikan.
+     *
+     * <p>Sama seperti Jack, penunjukan host <b>menaikkan</b> jumlahnya, bukan dibatasi
+     * olehnya — dan tetap berlaku walau peran Unknown sedang dimatikan. Host yang
+     * mengetik "orang ini Unknown" jelas ingin ada Unknown di game itu; menolaknya
+     * diam-diam karena satu setelan lain lupa dinyalakan cuma ketahuan setelah kartunya
+     * dibalik.</p>
+     *
+     * <p>Dipotong supaya selalu tersisa paling tidak satu Ace. Tanpa Ace sama sekali,
+     * permainannya selesai di pengecekan pertama: Ace "habis" sebelum ada yang mati, dan
+     * Unknown langsung jadi Jack tanpa pernah bermain.</p>
+     *
+     * @param forcedInPool berapa orang yang ditunjuk jadi Unknown yang benar-benar ikut main.
+     */
+    public static int unknownCountFor(int players, int jackCount, int forcedInPool) {
+        int wanted = JackConfig.CONFIG.unknownRole.get()
+                ? Math.max(JackConfig.CONFIG.unknownMax.get(), forcedInPool)
+                : forcedInPool;
+        return Math.max(0, Math.min(wanted, players - jackCount - 1));
     }
 
     public boolean isRegistered(ServerPlayer player) {
@@ -507,6 +554,8 @@ public class GameManager {
                     .withStyle(ChatFormatting.RED);
         }
 
+        prepareArena(server, players);
+
         participants.clear();
         panelDark.clear();
         panelQueue.clear();
@@ -516,6 +565,7 @@ public class GameManager {
         // ditinggalkan begitu saja tanpa /jack stop.
         clearCorpses(server);
         OfflinePlayers.get().clear(server);
+        MilkSupply.clearAll(server);
         jackWatches.clear();
         skipVotes.clear();
         statusBarMuted.clear();
@@ -523,19 +573,50 @@ public class GameManager {
         jackFailureRounds = 0;
         RandomSource random = server.overworld().getRandom();
         Collections.shuffle(players, new Random(random.nextLong()));
-        // Yang ditunjuk setjack ditarik ke depan barisan, dan peran Jack memang
-        // dibagikan dari depan. Pengurutannya stabil, jadi urutan acak tadi tetap
-        // berlaku di dalam masing-masing kelompok - sisa kursi Jack yang belum terisi
-        // tetap jatuh ke orang acak.
-        players.sort(Comparator.comparingInt(p -> forcedJacks.containsKey(p.getUUID()) ? 0 : 1));
+
+        // Barisannya disusun ulang jadi [kursi Jack | kursi Unknown | Ace], dan peran
+        // dibagikan dari depan menurut urutan itu. Tiap kelompok tetap dalam urutan acak
+        // hasil kocokan tadi, jadi kursi yang tidak diisi penunjukan jatuh ke orang acak.
+        List<ServerPlayer> forcedJ = new ArrayList<>();
+        List<ServerPlayer> forcedU = new ArrayList<>();
+        List<ServerPlayer> rest = new ArrayList<>();
+        for (ServerPlayer player : players) {
+            (forcedJacks.containsKey(player.getUUID()) ? forcedJ
+                    : forcedUnknowns.containsKey(player.getUUID()) ? forcedU : rest).add(player);
+        }
+        List<ServerPlayer> ordered = new ArrayList<>(forcedJ);
+        // Kursi Jack yang belum terisi diambil dari orang acak dulu. Yang ditunjuk jadi
+        // Unknown baru ikut diundi kalau memang tidak ada orang lain lagi.
+        while (ordered.size() < jackCount) {
+            ordered.add(!rest.isEmpty() ? rest.remove(0) : forcedU.remove(0));
+        }
+        int unknownCount = unknownCountFor(players.size(), jackCount, forcedU.size());
+        while (ordered.size() < jackCount + unknownCount) {
+            ordered.add(!forcedU.isEmpty() ? forcedU.remove(0) : rest.remove(0));
+        }
+        // Yang ditunjuk jadi Unknown tapi tidak kebagian kursi - pemainnya terlalu
+        // sedikit untuk tetap menyisakan satu Ace - jadi Ace biasa.
+        if (!forcedU.isEmpty()) {
+            JackOfHeartsMod.LOGGER.info("[JackOfHearts] {} penunjukan Unknown tidak kebagian kursi dan jadi Ace.",
+                    forcedU.size());
+        }
+        ordered.addAll(forcedU);
+        ordered.addAll(rest);
+        players = ordered;
+
         if (forcedInPool > 0) {
-            JackOfHeartsMod.LOGGER.info("[JackOfHearts] {} pemain ditunjuk jadi Jack lewat setjack; total Jack ronde ini: {}.",
+            JackOfHeartsMod.LOGGER.info("[JackOfHearts] {} pemain ditunjuk jadi Jack; total Jack game ini: {}.",
                     forcedInPool, jackCount);
+        }
+        if (JackConfig.CONFIG.unknownRole.get() && unknownCount < JackConfig.CONFIG.unknownMax.get()) {
+            JackOfHeartsMod.LOGGER.info("[JackOfHearts] Unknown dikurangi jadi {} supaya masih ada Ace.",
+                    unknownCount);
         }
         // Penunjukan "sekali" hangus di sini, di detik penunjukannya terpakai - bukan
         // saat gamenya selesai. Game yang dihentikan di tengah jalan tetap menghabiskan
-        // jatahnya, jadi tidak ada yang diam-diam jadi Jack dua kali berturut-turut.
+        // jatahnya, jadi tidak ada yang diam-diam dapat peran yang sama dua kali.
         forcedJacks.values().removeIf(forced -> !forced.always());
+        forcedUnknowns.values().removeIf(forced -> !forced.always());
 
         for (int i = 0; i < players.size(); i++) {
             ServerPlayer player = players.get(i);
@@ -543,7 +624,15 @@ public class GameManager {
             // pendaftaran sama sekali - jadi skinnya dititipkan di sini juga.
             rememberSkin(player, true);
             PlayerData data = new PlayerData(player.getUUID(), player.getGameProfile().getName());
-            data.role = i < jackCount ? Role.JACK : Role.ACE;
+            data.skillUses[Skill.DRUNK.ordinal()] = JackConfig.CONFIG.skillDrunk.get()
+                    ? JackConfig.CONFIG.skillDrunkMax.get() : -1;
+            data.skillUses[Skill.HUNGER.ordinal()] = JackConfig.CONFIG.skillHunger.get()
+                    ? JackConfig.CONFIG.skillHungerMax.get() : -1;
+            data.skillUses[Skill.POISON.ordinal()] = JackConfig.CONFIG.skillPoison.get()
+                    ? JackConfig.CONFIG.skillPoisonMax.get() : -1;
+            data.role = i < jackCount ? Role.JACK
+                    : i < jackCount + unknownCount ? Role.UNKNOWN
+                    : Role.ACE;
             participants.put(player.getUUID(), data);
         }
 
@@ -567,12 +656,150 @@ public class GameManager {
             broadcast(server, cafeteriaWarning);
         }
 
+        for (ServerPlayer player : players) {
+            sendSkillState(player, participants.get(player.getUUID()));
+        }
+
         syncRoster(server);
+        announceStart(server);
         beginReveal(server);
         return null;
     }
 
+    /**
+     * Font ikon milik mod ini ({@code assets/jackofhearts/font/icons.json}), terpisah dari
+     * {@code minecraft:default} supaya font vanilla tidak tersentuh sama sekali.
+     */
+    private static final ResourceLocation ICON_FONT = new ResourceLocation(JackOfHeartsMod.MOD_ID, "icons");
+    /** U+E000 di font ikon: logo Discord. Harus sama persis dengan "chars" di icons.json. */
+    private static final String DISCORD_GLYPH = "\uE000";
+
+    /**
+     * Logo Discord sebagai satu glyph font.
+     *
+     * <p>Warnanya wajib putih: glyph bitmap dikalikan dengan warna teksnya, jadi warna
+     * lain - termasuk yang terbawa dari komponen induk - ikut mewarnai logonya. Putih
+     * adalah pengali netral, yang keluar warna asli teksturnya.</p>
+     */
+    private static Component discordIcon() {
+        return Component.literal(DISCORD_GLYPH)
+                .withStyle(style -> style.withFont(ICON_FONT).withColor(ChatFormatting.WHITE));
+    }
+
+    /**
+     * Spanduk pembuka di chat, tepat saat animasi kocok kartu dimulai. Bentuknya sama
+     * dengan spanduk mod Deception.
+     *
+     * <p>Dikirim sebelum layar kocok kartu terbuka, jadi chat-nya sudah menunggu di
+     * belakang layar itu - dan tidak berisi apa pun soal peran, jadi tidak ada yang
+     * bocor walau terbaca lebih dulu.</p>
+     */
+    private void announceStart(MinecraftServer server) {
+        broadcast(server, Component.literal("═══════════════════════").withStyle(ChatFormatting.GOLD));
+        broadcast(server, Component.literal(""));
+        broadcast(server, Component.literal("  ♥️ GAME DIMULAI ♥️").withStyle(ChatFormatting.GREEN));
+        broadcast(server, Component.literal("  Tebak simbol di punggungmu, \n  dan bunuh jack untuk menang.")
+                .withStyle(ChatFormatting.YELLOW));
+        broadcast(server, Component.literal("  ").append(discordIcon())
+                .append(Component.literal(" @aflahall").withStyle(ChatFormatting.AQUA))
+                .append(Component.literal(" Dev Of ").withStyle(ChatFormatting.WHITE)
+                        .append(Component.literal("@corazonid").withStyle(ChatFormatting.AQUA))));
+        broadcast(server, Component.literal(""));
+        broadcast(server, Component.literal("═══════════════════════").withStyle(ChatFormatting.GOLD));
+    }
+
+    /**
+     * Menyiapkan arena dan pesertanya, sebelum satu peran pun dibagikan.
+     *
+     * <p>Semuanya dikerjakan di sini, di satu tempat, karena semuanya harus sudah
+     * selesai <b>sebelum</b> layar kocok kartu muncul: pemain yang masih tersebar di
+     * seluruh map saat animasinya jalan akan melihat kartunya membalik sambil berdiri di
+     * tempat yang salah, dan begitu layarnya tertutup dia sudah tertinggal satu ronde.</p>
+     */
+    private void prepareArena(MinecraftServer server, List<ServerPlayer> players) {
+        server.setDifficulty(Difficulty.HARD, true);
+        // Nilai lamanya disimpan supaya dunia dikembalikan seperti sebelum dipinjam.
+        pvpBefore = server.isPvpAllowed();
+        server.setPvpAllowed(false);
+
+        boolean arena = Arena.level(server) != null;
+        if (!arena) {
+            JackOfHeartsMod.LOGGER.warn(
+                    "[JackOfHearts] Dimensi arena '{}' tidak ada; peserta dibiarkan di tempatnya.",
+                    JackConfig.CONFIG.arenaDimension.get());
+        }
+        for (ServerPlayer player : players) {
+            if (arena) {
+                Arena.send(player);
+            }
+            player.setGameMode(GameType.ADVENTURE);
+            player.getInventory().clearContent();
+            player.getInventory().selected = 0;
+            setHealth(player, JackConfig.CONFIG.playerHealth.get());
+            setReach(player, JackConfig.CONFIG.blockReach.get());
+            player.inventoryMenu.broadcastChanges();
+        }
+    }
+
+    /** Nilai pvp dunia sebelum permainan meminjamnya. */
+    private boolean pvpBefore = true;
+
+    /**
+     * Jangkauan tangan peserta.
+     *
+     * <p>Dipendekkan supaya orang harus benar-benar berdiri di depan piring, tombol, dan
+     * terminal — jangkauan vanilla 4,5 blok membuat setengah ruangan bisa disentuh dari
+     * ambang pintu.</p>
+     *
+     * <p>Yang diubah nilai dasar atributnya, bukan lewat modifier: modifier harus dicabut
+     * dengan UUID yang sama persis, dan satu permainan yang berhenti tidak wajar akan
+     * meninggalkan pemain dengan jangkauan aneh yang tidak bisa dijelaskan asalnya.</p>
+     */
+    private static void setReach(ServerPlayer player, double blocks) {
+        AttributeInstance reach = player.getAttribute(ForgeMod.BLOCK_REACH.get());
+        if (reach != null) {
+            reach.setBaseValue(blocks);
+        }
+    }
+
+    /**
+     * Nyawa peserta.
+     *
+     * <p>Nilai dasar atributnya yang diubah, bukan sekadar nyawanya diturunkan: batang
+     * nyawanya ikut memendek, jadi yang terlihat pemain adalah keadaan yang sebenarnya.
+     * Nyawa sekarang diisikan ulang sesudahnya karena menurunkan batas atas tidak
+     * menurunkan nyawa yang sedang dipegang - pemain akan berjalan dengan 20 nyawa di
+     * batang yang cuma muat 5.</p>
+     */
+    private static void setHealth(ServerPlayer player, double half) {
+        AttributeInstance health = player.getAttribute(Attributes.MAX_HEALTH);
+        if (health != null) {
+            health.setBaseValue(half);
+        }
+        player.setHealth((float) half);
+    }
+
+    private static void restoreHealth(ServerPlayer player) {
+        AttributeInstance health = player.getAttribute(Attributes.MAX_HEALTH);
+        if (health != null) {
+            health.setBaseValue(health.getAttribute().getDefaultValue());
+            player.setHealth(player.getMaxHealth());
+        }
+    }
+
+    private static void restoreReach(ServerPlayer player) {
+        AttributeInstance reach = player.getAttribute(ForgeMod.BLOCK_REACH.get());
+        if (reach != null) {
+            reach.setBaseValue(reach.getAttribute().getDefaultValue());
+        }
+    }
+
     public void stop(MinecraftServer server, boolean announce) {
+        server.setPvpAllowed(pvpBefore);
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            restoreReach(player);
+            restoreHealth(player);
+        }
         pendingExecution.clear();
         pendingSafe.clear();
         pendingOffline.clear();
@@ -583,6 +810,7 @@ public class GameManager {
         clearExecutionCameras(server);
         endDebugLaser(server);
         clearCorpses(server);
+        MilkSupply.clearAll(server);
         // Badan pengganti ikut dibubarkan: begitu permainannya berhenti, tidak ada
         // lagi yang diwakilinya. Isi perut yang sempat disimulasikan ikut hilang, dan
         // memang harus - pemainnya akan masuk kembali sebagai orang biasa, bukan
@@ -596,6 +824,7 @@ public class GameManager {
         }
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             ModNetwork.toPlayer(player, new JackListPacket(List.of()));
+            ModNetwork.toPlayer(player, SkillStatePacket.none());
         }
         participants.clear();
         panelDark.clear();
@@ -629,6 +858,9 @@ public class GameManager {
         // memotret penataan meja kafetaria, dan itu cuma boleh dilakukan saat tidak
         // ada game berjalan.
         Cafeteria.get().idleTick(server);
+        // Di luar penjagaan isRunning() di bawah: penanda wadah justru dipakai saat
+        // tidak ada permainan, waktunya map disusun.
+        MilkSupply.tickChecking(server);
 
         if (!isRunning()) {
             return;
@@ -642,6 +874,7 @@ public class GameManager {
             tickHunger(server);
         }
         tickOfflinePlayers(server, phase != GamePhase.REVEAL);
+        tickPoison(server);
         tickJackWatches(server);
 
         if (phase == GamePhase.REVEAL) {
@@ -911,9 +1144,253 @@ public class GameManager {
         for (ServerPlayer player : onlineParticipants(server)) {
             PlayerData data = participants.get(player.getUUID());
             if (data != null && data.alive) {
-                HungerRules.tick(player);
+                HungerRules.tick(player, data.hungerCursed);
             }
         }
+    }
+
+    // ------------------------------------------------------------------ skill Jack
+
+    /** Berapa lama racun bekerja sebelum korbannya gugur. */
+    private static final int POISON_TICKS = 5 * 60 * 20;
+    /** Sisa waktu racun saat korbannya mulai merasakan ada yang tidak beres. */
+    private static final int POISON_WARNING_TICKS = 60 * 20;
+    /** Sejauh apa skill boleh menjangkau, diukur di server. */
+    private static final double SKILL_RANGE = 3.0D;
+
+    /**
+     * Jack memakai satu skill.
+     *
+     * <p>Jangkauannya diperiksa ulang di sini walau client sudah memilih sasarannya
+     * sendiri: yang dikirim client cuma id, dan id bisa menunjuk siapa saja. Batasnya
+     * sedikit lebih longgar daripada yang dipakai client ({@code 2}) supaya sasaran yang
+     * bergerak tidak ditolak hanya karena paketnya sampai satu tick terlambat.</p>
+     */
+    public void useSkill(ServerPlayer jack, Skill skill, int targetId, boolean self, BlockPos food) {
+        PlayerData data = participants.get(jack.getUUID());
+        if (data == null || !data.alive || !data.isJack() || phase != GamePhase.ROUND) {
+            return;
+        }
+        if (data.skillUses[skill.ordinal()] <= 0) {
+            jack.displayClientMessage(Component.translatable("message.jackofhearts.skill_empty")
+                    .withStyle(ChatFormatting.RED), true);
+            return;
+        }
+        if (data.skillRound == round) {
+            jack.displayClientMessage(Component.translatable("message.jackofhearts.skill_this_round")
+                    .withStyle(ChatFormatting.RED), true);
+            muteStatusBar(jack, 40);
+            return;
+        }
+        if (skill.targetsFood()) {
+            usePoison(jack, data, food);
+            return;
+        }
+
+        ServerPlayer victim = self ? jack : resolveSkillTarget(jack, targetId);
+        if (victim == null) {
+            jack.displayClientMessage(Component.translatable("message.jackofhearts.skill_no_target")
+                    .withStyle(ChatFormatting.RED), true);
+            return;
+        }
+        PlayerData victimData = participants.get(victim.getUUID());
+        if (victimData == null || !victimData.alive) {
+            jack.displayClientMessage(Component.translatable("message.jackofhearts.skill_no_target")
+                    .withStyle(ChatFormatting.RED), true);
+            return;
+        }
+
+        switch (skill) {
+            case DRUNK ->
+                    // Ronde berikutnya, bukan sekarang: korban yang langsung terhuyung
+                    // di depan Jack praktis menunjuk siapa pelakunya.
+                    victimData.drunkRound = round + 1;
+            // Korbannya tidak diberi tahu apa-apa, dan itu justru seluruh gunanya.
+            // Yang tahu dirinya sedang dicurangi akan berhenti mempercayai matanya
+            // sendiri; yang tidak tahu akan membacakan kartu yang salah dengan mantap,
+            // dan habis makan lebih cepat tanpa pernah curiga kenapa.
+            case HUNGER -> victimData.hungerCursed = true;
+            default -> {
+                return;
+            }
+        }
+
+        data.skillUses[skill.ordinal()]--;
+        data.skillRound = round;
+        jack.displayClientMessage(Component.translatable("message.jackofhearts.skill_used",
+                        Component.translatable("skill.jackofhearts." + skill.getId()),
+                        self ? Component.translatable("message.jackofhearts.skill_self")
+                                : Component.literal(victimData.name),
+                        data.skillUses[skill.ordinal()])
+                .withStyle(ChatFormatting.LIGHT_PURPLE), true);
+        muteStatusBar(jack, 40);
+        sendSkillState(jack, data);
+        JackOfHeartsMod.LOGGER.info("[JackOfHearts] {} memakai skill {} ke {}.",
+                data.name, skill.getId(), victimData.name);
+    }
+
+    @Nullable
+    private ServerPlayer resolveSkillTarget(ServerPlayer jack, int targetId) {
+        if (targetId < 0) {
+            return null;
+        }
+        Entity entity = jack.serverLevel().getEntity(targetId);
+        if (!(entity instanceof ServerPlayer victim) || victim == jack) {
+            return null;
+        }
+        return victim.distanceTo(jack) <= SKILL_RANGE ? victim : null;
+    }
+
+    /**
+     * Kelonggaran jangkauan racun di atas jangkauan tangan, diukur dari mata ke titik
+     * tengah piring. Crosshair client mengukur sampai permukaan blok, bukan titik
+     * tengahnya, jadi tanpa kelonggaran ini piring di ujung jangkauan yang jelas bisa
+     * ditunjuk malah ditolak.
+     */
+    private static final double POISON_REACH_SLACK = 1.5D;
+
+    /**
+     * Racun: satu porsi dari jenis makanan di piring yang ditatap Jack jadi beracun.
+     *
+     * <p>Posisinya dikirim client — piring yang digaris di layarnya — tapi jaraknya
+     * diperiksa ulang di sini dengan jangkauan tangan server, karena posisi yang
+     * dikirim client bisa menunjuk piring mana saja di meja.</p>
+     */
+    private void usePoison(ServerPlayer jack, PlayerData data, BlockPos food) {
+        double reach = jack.getBlockReach() + POISON_REACH_SLACK;
+        BlockState state = jack.level().getBlockState(food);
+        if (jack.getEyePosition().distanceToSqr(Vec3.atCenterOf(food)) > reach * reach
+                || !Cafeteria.get().poison(jack, food, state)) {
+            jack.displayClientMessage(Component.translatable("message.jackofhearts.poison_no_target")
+                    .withStyle(ChatFormatting.RED), true);
+            muteStatusBar(jack, 40);
+            return;
+        }
+        data.skillUses[Skill.POISON.ordinal()]--;
+        data.skillRound = round;
+        // Tidak mungkin null di sini: poison() di atas sudah menolak yang bukan piring.
+        ItemStack dish = new ItemStack(CafeteriaFood.foodOf(state));
+        jack.displayClientMessage(Component.translatable("message.jackofhearts.poison_placed",
+                        dish.getHoverName(), data.skillUses[Skill.POISON.ordinal()])
+                .withStyle(ChatFormatting.DARK_GREEN), true);
+        muteStatusBar(jack, 40);
+        sendSkillState(jack, data);
+        JackOfHeartsMod.LOGGER.info("[JackOfHearts] {} meracuni satu porsi {} di {}.",
+                data.name, dish.getItem(), food.toShortString());
+    }
+
+    /** Sisa pemakaian skill, cuma dikirim ke Jack. */
+    private void sendSkillState(ServerPlayer player, @Nullable PlayerData data) {
+        if (data == null || !data.isJack() || !data.alive || !isRunning()) {
+            ModNetwork.toPlayer(player, SkillStatePacket.none());
+            return;
+        }
+        ModNetwork.toPlayer(player, new SkillStatePacket(data.skillUses.clone(), data.skillRound == round));
+    }
+
+    /**
+     * Racun berjalan tiap tick untuk semua peserta, online maupun tidak.
+     *
+     * <p>Racun tidak peduli korbannya sedang menonton layarnya atau tidak — dan kalau
+     * berhenti selama dia keluar, keluar dari server jadi penawar racun yang paling
+     * murah.</p>
+     */
+    private void tickPoison(MinecraftServer server) {
+        for (PlayerData data : List.copyOf(participants.values())) {
+            if (!data.alive || data.poisonTicks <= 0) {
+                continue;
+            }
+            data.poisonTicks--;
+            ServerPlayer player = server.getPlayerList().getPlayer(data.uuid);
+            if (data.poisonTicks == POISON_WARNING_TICKS && player != null) {
+                player.sendSystemMessage(Component.translatable("message.jackofhearts.poison_warning")
+                        .withStyle(ChatFormatting.DARK_RED));
+            }
+            if (data.poisonTicks <= 0) {
+                killByPoison(server, data, player);
+            }
+        }
+    }
+
+    /**
+     * Racunnya bekerja. Ditangani seperti kelaparan, bukan seperti laser: tidak ada
+     * adegan, tidak ada sinar, cuma orang yang tiba-tiba jatuh di tempat dia berdiri.
+     */
+    private void killByPoison(MinecraftServer server, PlayerData data, @Nullable ServerPlayer player) {
+        data.alive = false;
+        recordDeath();
+        if (player != null) {
+            spawnCorpse(player, null, data.uuid);
+            stripUniform(player);
+            purgeCafeteriaFood(player);
+            player.setHealth(player.getMaxHealth());
+            HungerRules.reset(player);
+            player.setInvulnerable(false);
+            player.setGameMode(GameType.SPECTATOR);
+            player.sendSystemMessage(Component.translatable("message.jackofhearts.poison_died")
+                    .withStyle(ChatFormatting.DARK_RED));
+        } else {
+            MannequinEntity body = OfflinePlayers.get().entity(data.uuid);
+            if (body != null) {
+                spawnCorpse(body, null, data.uuid);
+            }
+            OfflinePlayers.get().remove(data.uuid);
+        }
+        queuePanelOff(data.uuid, 1);
+        broadcast(server, eliminated(data.name));
+        checkWinConditions(server, false);
+    }
+
+    /** Peserta ini baru saja memakan porsi yang diracuni Jack. */
+    public void onPoisonedFoodEaten(ServerPlayer player) {
+        PlayerData data = participants.get(player.getUUID());
+        if (data == null || !data.alive || !isRunning() || data.poisonTicks > 0) {
+            return;
+        }
+        data.poisonTicks = POISON_TICKS;
+        player.sendSystemMessage(Component.translatable("message.jackofhearts.poison_eaten")
+                .withStyle(ChatFormatting.DARK_RED));
+    }
+
+    /**
+     * Menyembuhkan semua yang bisa disembuhkan: racun, mabuk, dan lapar yang digandakan.
+     *
+     * <p>Belum ada yang memanggilnya — susu penawarnya menyusul. Dipisah sebagai satu
+     * method supaya penawar apa pun nanti cukup memanggil satu tempat ini, bukan
+     * menghapus tiga keadaan yang tersebar.</p>
+     */
+    @Nullable
+    public String cure(ServerPlayer player) {
+        PlayerData data = participants.get(player.getUUID());
+        if (data == null) {
+            return null;
+        }
+        List<String> active = new ArrayList<>(3);
+        if (data.poisonTicks > 0) {
+            active.add("poison");
+        }
+        if (data.drunkRound >= round) {
+            active.add("drunk");
+        }
+        if (data.hungerCursed) {
+            active.add("hunger");
+        }
+        if (active.isEmpty()) {
+            return null;
+        }
+
+        // Satu gelas, satu penyakit - dan yang mana diundi. Kalau sekali minum
+        // menyembuhkan semuanya, susu yang langka justru jadi tombol reset: siapa pun
+        // yang berhasil menemukan satu ember langsung bersih dari seluruh kerja Jack
+        // sepanjang permainan.
+        String cured = active.get(player.getRandom().nextInt(active.size()));
+        switch (cured) {
+            case "poison" -> data.poisonTicks = 0;
+            case "drunk" -> data.drunkRound = 0;
+            default -> data.hungerCursed = false;
+        }
+        syncPlayer(player, data);
+        return cured;
     }
 
     private void syncPrisonDoors(MinecraftServer server) {
@@ -979,21 +1456,33 @@ public class GameManager {
         phase = GamePhase.REVEAL;
         timer = seconds * 20;
 
-        int totalPlayers = participants.size();
-        int totalJacks = (int) participants.values().stream().filter(PlayerData::isJack).count();
-        int cards = Math.min(totalPlayers, MAX_LINEUP_CARDS);
-        int jacks = Math.min(totalJacks, cards);
-
         for (ServerPlayer player : onlineParticipants(server)) {
             PlayerData data = participants.get(player.getUUID());
             if (data == null) {
                 continue;
             }
             player.setInvulnerable(true);
-            ModNetwork.toPlayer(player, new OpenRoleRevealPacket(data.role.ordinal(), timer, cards, jacks,
-                    totalPlayers, totalJacks, false));
+            ModNetwork.toPlayer(player, revealPacket(data.role, timer));
         }
         syncAll(server);
+    }
+
+    /**
+     * Layar kocok kartu untuk satu peserta.
+     *
+     * <p>Kartu Unknown ikut dijejer terbuka seperti kartu Jack. Semua orang boleh tahu
+     * ada berapa Unknown di meja, sama seperti mereka boleh tahu ada berapa Jack — yang
+     * dirahasiakan cuma siapa.</p>
+     */
+    private OpenRoleRevealPacket revealPacket(Role role, int ticksLeft) {
+        int totalPlayers = participants.size();
+        int totalJacks = (int) participants.values().stream().filter(PlayerData::isJack).count();
+        int totalUnknowns = (int) participants.values().stream().filter(PlayerData::isUnknown).count();
+        int cards = Math.min(totalPlayers, MAX_LINEUP_CARDS);
+        int jacks = Math.min(totalJacks, cards);
+        int unknowns = Math.min(totalUnknowns, cards - jacks);
+        return new OpenRoleRevealPacket(role.ordinal(), ticksLeft, cards, jacks, unknowns,
+                totalPlayers, totalJacks, totalUnknowns, false);
     }
 
     /**
@@ -1003,8 +1492,10 @@ public class GameManager {
     public void previewReveal(ServerPlayer player, int playerCount, int jacks, Role role) {
         int total = Math.max(playerCount, 1);
         int cards = Math.min(total, MAX_LINEUP_CARDS);
-        ModNetwork.toPlayer(player, new OpenRoleRevealPacket(
-                role.ordinal(), 0, cards, Math.min(jacks, cards), total, jacks, true));
+        int jackCards = Math.min(jacks, cards);
+        int unknowns = unknownCountFor(total, jacks, 0);
+        ModNetwork.toPlayer(player, new OpenRoleRevealPacket(role.ordinal(), 0, cards, jackCards,
+                Math.min(unknowns, cards - jackCards), total, jacks, unknowns, true));
     }
 
     private void endReveal(MinecraftServer server) {
@@ -1039,6 +1530,7 @@ public class GameManager {
                     + data.role.getId()).withStyle(ChatFormatting.GRAY));
             player.sendSystemMessage(Component.empty());
             sendJackList(player, data);
+        sendSkillState(player, data);
         }
     }
 
@@ -1091,6 +1583,12 @@ public class GameManager {
 
         enforceUniforms(server);
         Cafeteria.get().onRoundStart(server);
+        MilkSupply.spawn(server, MilkSupply.forRound(round));
+        // Jatah skill per ronde kembali terbuka: panelnya harus diberi tahu, kalau tidak
+        // ikonnya tetap meredup sepanjang ronde baru padahal sudah boleh dipakai lagi.
+        for (ServerPlayer player : onlineParticipants(server)) {
+            sendSkillState(player, participants.get(player.getUUID()));
+        }
 
         for (ServerPlayer player : onlineParticipants(server)) {
             PlayerData data = participants.get(player.getUUID());
@@ -1236,6 +1734,9 @@ public class GameManager {
         // langsung tanpa adegan.
         if (jackFailed) {
             jackFailureRounds = 0;
+            // Jack-nya gagal, dan itu sama artinya dengan Jack yang gugur: Unknown yang
+            // masih hidup ikut Ace.
+            resolveUnknowns(server, Role.ACE, false);
             finish(server, Role.ACE,
                     Component.translatable("message.jackofhearts.jack_failed", deathlessRounds));
             return;
@@ -2495,15 +2996,27 @@ public class GameManager {
             return true;
         }
 
-        boolean anyJackAlive = participants.values().stream().anyMatch(d -> d.isJack() && d.alive);
-        boolean anyAceAlive = participants.values().stream().anyMatch(d -> d.isAce() && d.alive);
+        boolean anyJackAlive = participants.values().stream().anyMatch(d -> d.side() == Role.JACK && d.alive);
+        // Unknown yang sudah memihak Ace dihitung sebagai Ace: dia ikut menahan
+        // kemenangan Jack sama seperti Ace lainnya.
+        boolean anyAceAlive = participants.values().stream().anyMatch(d -> d.side() == Role.ACE && d.alive);
 
         // Habisnya Ace diperiksa lebih dulu, dan urutan itu yang menentukan siapa
         // pemenang kalau semua orang mati bersamaan: Jack. Permainan ini soal bertahan
         // dari Jack, jadi ruangan yang habis tak bersisa bukan kemenangan pihak Ace.
+        //
+        // Unknown yang masih hidup dan belum memihak di sini tinggal sendiri: dia jadi
+        // Jack, dan menang bersama Jack. Termasuk kalau Jack-nya sendiri ikut habis di
+        // detik yang sama - dia satu-satunya yang tersisa.
         if (!anyAceAlive) {
+            resolveUnknowns(server, Role.JACK, false);
             finish(server, Role.JACK, Component.translatable("message.jackofhearts.win_jack_all_aces_dead"));
             return true;
+        }
+        // Ada Jack yang gugur selagi Unknown masih hidup: Unknown ikut Ace. Diperiksa
+        // sebelum kemenangan Ace supaya Unknown yang masih hidup ikut menang di bawah.
+        if (participants.values().stream().anyMatch(d -> d.isJack() && !d.alive)) {
+            resolveUnknowns(server, Role.ACE, anyJackAlive);
         }
         if (!anyJackAlive) {
             finish(server, Role.ACE, Component.translatable("message.jackofhearts.win_ace_jack_dead"));
@@ -2520,6 +3033,33 @@ public class GameManager {
             }
         }
         return false;
+    }
+
+    /**
+     * Menentukan pihak semua Unknown yang masih hidup dan belum memihak.
+     *
+     * <p>Yang sudah gugur dilewati: pihaknya tidak pernah ditentukan, dan dia tidak ikut
+     * menang siapa-siapa. Itulah tujuan Unknown - bertahan hidup sampai salah satu pihak
+     * habis lebih dulu.</p>
+     *
+     * @param notify beri tahu yang bersangkutan lewat pesan pribadi. Cuma dipakai kalau
+     *               permainannya masih berlanjut: tujuannya berubah, dan dia harus tahu.
+     *               Kalau permainannya selesai di detik yang sama, layar menang/kalah
+     *               sudah memberitahunya.
+     */
+    private void resolveUnknowns(MinecraftServer server, Role side, boolean notify) {
+        for (PlayerData data : participants.values()) {
+            if (!data.isUnknown() || !data.alive || data.allegiance != null) {
+                continue;
+            }
+            data.allegiance = side;
+            JackOfHeartsMod.LOGGER.info("[JackOfHearts] Unknown {} sekarang di pihak {}.", data.name, side.getId());
+            ServerPlayer player = server.getPlayerList().getPlayer(data.uuid);
+            if (notify && player != null) {
+                player.sendSystemMessage(Component.translatable("message.jackofhearts.unknown_resolved",
+                        side.getDisplayName()).withStyle(ChatFormatting.LIGHT_PURPLE));
+            }
+        }
     }
 
     /**
@@ -2577,7 +3117,7 @@ public class GameManager {
         for (PlayerData data : participants.values()) {
             broadcast(server, Component.literal(" " + data.name + " ")
                     .withStyle(ChatFormatting.WHITE)
-                    .append(data.role.getDisplayName())
+                    .append(data.roleLabel())
                     .append(Component.translatable(data.alive
                                     ? "message.jackofhearts.role_list_alive"
                                     : "message.jackofhearts.role_list_dead")
@@ -2595,7 +3135,9 @@ public class GameManager {
                 // yang jujur bisa ditampilkan kepadanya.
                 continue;
             }
-            boolean won = data.role == winner;
+            // Pihaknya, bukan kartunya: Unknown menang bersama pihak yang dia ikuti, dan
+            // Unknown yang belum pernah memihak tidak menang bersama siapa pun.
+            boolean won = data.side() == winner;
             title(player,
                     Component.translatable(won
                                     ? "message.jackofhearts.result_win"
@@ -2610,11 +3152,18 @@ public class GameManager {
                     1.0F, won ? 1.0F : 0.6F);
         }
         setParticipantsInvulnerable(server, false);
+        server.setPvpAllowed(pvpBefore);
         for (ServerPlayer player : onlineParticipants(server)) {
             stripUniform(player);
+            restoreReach(player);
+            restoreHealth(player);
         }
         clearCorpses(server);
         OfflinePlayers.get().clear(server);
+        MilkSupply.clearAll(server);
+        for (ServerPlayer player : onlineParticipants(server)) {
+            ModNetwork.toPlayer(player, SkillStatePacket.none());
+        }
         syncAll(server);
     }
 
@@ -2756,11 +3305,7 @@ public class GameManager {
 
         if (data != null && phase == GamePhase.REVEAL) {
             player.setInvulnerable(true);
-            int total = participants.size();
-            int jacks = (int) participants.values().stream().filter(PlayerData::isJack).count();
-            ModNetwork.toPlayer(player, new OpenRoleRevealPacket(data.role.ordinal(), Math.max(timer, 1),
-                    Math.min(total, MAX_LINEUP_CARDS), Math.min(jacks, MAX_LINEUP_CARDS),
-                    total, jacks, false));
+            ModNetwork.toPlayer(player, revealPacket(data.role, Math.max(timer, 1)));
         }
         rememberSkin(player, data != null || registered.containsKey(player.getUUID()));
         sendJackList(player, data);
@@ -2800,8 +3345,12 @@ public class GameManager {
         boolean lockView = alive && isRunning() && JackConfig.CONFIG.lockFirstPerson.get();
         int role = participating ? data.role.ordinal() : -1;
         int guess = participating && data.guess != null ? data.guess.ordinal() : -1;
+        // Mabuknya berhenti bersama rondenya, bukan bersama hitungan waktu apa pun:
+        // ronde bisa dipotong lebih cepat lewat pemungutan suara, dan fase menebak
+        // adalah fase yang paling tidak adil untuk dijalani dengan mata yang berbohong.
+        boolean drunk = alive && phase == GamePhase.ROUND && data.drunkRound == round;
         ModNetwork.toPlayer(player, new SyncStatePacket(phase.ordinal(), round, Math.max(timer, 0),
-                participating, alive, lockView, role, guess));
+                participating, alive, lockView, role, guess, drunk));
     }
 
     /**
@@ -2987,8 +3536,20 @@ public class GameManager {
                             .withStyle(ChatFormatting.GREEN)
                     : Component.translatable("hud.jackofhearts.no_guess").withStyle(ChatFormatting.RED));
         }
-        return line.append(Component.literal(votes + "/" + needed)
+        line = line.append(Component.literal(votes + "/" + needed)
                 .withStyle(voted ? ChatFormatting.GREEN : ChatFormatting.YELLOW));
+
+        // Sisa waktu racun, cuma untuk yang keracunan. Ditaruh di baris yang sama dengan
+        // sisa waktu ronde supaya keduanya bisa dibaca sekali lihat: yang diracun sedang
+        // berlomba dengan dua jam sekaligus, dan yang menentukan bukan yang lebih
+        // panjang.
+        if (data != null && data.poisonTicks > 0) {
+            int poison = data.poisonTicks / 20;
+            line = line.append(separator)
+                    .append(Component.literal(String.format("%d:%02d", poison / 60, poison % 60))
+                            .withStyle(ChatFormatting.DARK_RED));
+        }
+        return line;
     }
 
     /**

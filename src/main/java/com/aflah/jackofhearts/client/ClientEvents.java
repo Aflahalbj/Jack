@@ -36,6 +36,7 @@ public class ClientEvents {
 
         ClientGameState.clientTick();
         ClientCameraOverride.tick();
+        ClientSkills.tick();
 
         // Kunci first person: F5 boleh ditekan, tapi kamera langsung dipaksa balik,
         // jadi pemain tidak pernah bisa mengintip simbol di punggungnya sendiri.
@@ -136,5 +137,6 @@ public class ClientEvents {
         // Skin yang diingat ikut dilupakan: sambungan berikutnya bisa ke server lain,
         // dan di sana UUID yang sama belum tentu orang yang sama.
         PlayerSkins.reset();
+        ClientSkills.reset();
     }
 }

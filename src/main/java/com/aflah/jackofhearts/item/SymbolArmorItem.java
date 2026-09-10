@@ -69,6 +69,11 @@ public class SymbolArmorItem extends ArmorItem {
                 return JackOfHeartsMod.MOD_ID + ":textures/models/armor/uniform_" + shuffling + "_layer_1.png";
             }
         }
+        // Yang mabuk membaca kartu yang salah - dan membacanya dengan mantap, karena
+        // kartu palsunya tetap sama sepanjang ronde. Lihat ClientOnlyHooks#misread.
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            symbol = ClientOnlyHooks.misread(entity, symbol);
+        }
         return JackOfHeartsMod.MOD_ID + ":textures/models/armor/uniform_" + symbol.getId() + "_layer_1.png";
     }
 

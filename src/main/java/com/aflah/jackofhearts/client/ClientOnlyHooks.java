@@ -22,6 +22,30 @@ public final class ClientOnlyHooks {
     }
 
     /**
+     * Simbol yang <b>terlihat</b> oleh pemain ini di punggung orang lain.
+     *
+     * <p>Selama mabuk, yang terbaca bukan simbol yang sebenarnya. Itulah seluruh isi
+     * skill mabuk: permainan ini berputar pada satu hal — kamu tidak bisa melihat
+     * kartumu sendiri, jadi kamu bergantung pada apa yang dibacakan orang lain. Orang
+     * yang mabuk membacakan kartu yang salah dengan penuh percaya diri, dan racun
+     * informasinya menyebar jauh lebih luas daripada satu orang yang dibuat pusing.</p>
+     *
+     * <p>Pergeserannya tetap, bukan diacak tiap frame: 1 sampai 3 langkah, diturunkan
+     * dari UUID pemiliknya dan nomor ronde. Dua akibatnya sama-sama disengaja — simbol
+     * yang salah itu <b>tidak pernah kebetulan benar</b>, dan dia <b>tidak berkedip</b>.
+     * Kartu yang berganti-ganti sendiri akan langsung ketahuan palsu; kartu yang salah
+     * tapi diam adalah kartu yang dipercaya.</p>
+     */
+    public static Symbol misread(Entity entity, Symbol real) {
+        if (!ClientGameState.drunk || entity == null) {
+            return real;
+        }
+        int shift = 1 + Math.floorMod(entity.getUUID().hashCode() * 31 + ClientGameState.round,
+                Symbol.VALUES.length - 1);
+        return Symbol.VALUES[(real.ordinal() + shift) % Symbol.VALUES.length];
+    }
+
+    /**
      * Simbol yang sedang ditampilkan selama animasi kocok di awal ronde, atau null
      * kalau tidak sedang mengocok. Bergantian tiap 2 tick supaya terbaca sebagai
      * simbol yang sedang diputar, bukan sekadar berkedip.

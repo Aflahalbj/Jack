@@ -31,8 +31,41 @@ Untuk uji coba langsung: `./gradlew runClient` atau `./gradlew runServer`.
 |---|---|
 | **Jack** | Tidak ada satu pun peserta yang gugur selama **3 ronde beruntun** — Jack dieksekusi laser |
 | **Ace** | Semua Ace habis, atau Jack bertahan sampai selesai **ronde 10** |
+| **Unknown** *(opsional)* | Gugur sebelum pihaknya ditentukan — lihat *Peran Unknown* di bawah |
 
 Ambangnya bisa diubah lewat config (`maxDeathlessRounds`, `jackWinRound`).
+
+### Peran Unknown
+
+Bawaannya **mati**. Nyalakan dengan `/jack setting unknown on`, dan atur jumlahnya dengan
+`/jack setting unknown max <n>` (bawaan 1). Jumlahnya dipotong sendiri kalau pemainnya
+tidak cukup — selalu disisakan paling tidak satu Ace. Pemain tertentu bisa dipastikan
+jadi Unknown dengan `/jack setting unknown set <pemain> [once|always]` (lihat
+*Penunjukan peran* di bagian Perintah).
+
+Unknown **belum punya pihak** saat kartunya dibalik. Pihaknya ditentukan oleh siapa yang
+habis lebih dulu selagi dia masih hidup:
+
+- **Ada Jack yang gugur lebih dulu** → dia ikut **Ace**. Sejak itu dia dihitung sebagai
+  Ace: Jack harus menghabisinya juga untuk menang. Kalau permainannya masih berlanjut
+  (Jack-nya lebih dari satu), dia diberi tahu lewat pesan pribadi.
+- **Semua Ace habis dan dia tinggal sendiri** → dia jadi **Jack sebenarnya**, dan menang
+  bersama Jack. Termasuk kalau Jack-nya ikut habis di detik yang sama: dia satu-satunya
+  yang tersisa.
+
+Unknown yang **gugur sebelum pihaknya ditentukan tidak ikut menang siapa-siapa**, dan
+begitu juga yang masih belum memihak saat Jack menang karena bertahan sampai ronde
+terakhir — di situ Jack-nya tidak gugur dan dia juga tidak sendirian. Jadi tujuan Unknown
+satu: bertahan hidup sampai salah satu pihak runtuh.
+
+Selain itu dia peserta biasa: memakai seragam, ikut menebak, bisa kelaparan, dan tidak
+punya skill. Kartu Unknown ikut dijejer terbuka di animasi kocok kartu (`7 kartu di meja ·
+1 JACK · 1 UNKNOWN`) — semua orang boleh tahu ada berapa Unknown, yang dirahasiakan cuma
+siapa. Di daftar peran akhir, pihaknya ditulis di sampingnya (`UNKNOWN → ACE`).
+
+Gambar kartunya Joker ungu, diturunkan dari
+[Cards-Joker-Black.svg](https://commons.wikimedia.org/wiki/File:Cards-Joker-Black.svg)
+karya GW Simulations di Wikimedia Commons (domain publik).
 
 **Menang-kalahnya per tim.** Jack menang berarti semua Jack menang; Ace menang berarti
 semua Ace menang — termasuk yang sudah gugur di ronde dua, karena kemenangan itu
@@ -96,6 +129,238 @@ bisa diulang. Suruh dia masuk dulu, atau keluarkan dari daftar dengan `/jack unr
 
 `/jack listplayer` menampilkan isi daftar lengkap dengan status online/offline tiap orang.
 
+### Tiga kemampuan Jack
+
+Jack tidak bisa melukai siapa-siapa, jadi seluruh kerjanya lewat tiga skill ini.
+
+| Skill | Cara pakai | Efeknya |
+|---|---|---|
+| **Racun** | Tatap piring kafetaria, tekan **P** | Satu porsi jenis itu jadi beracun |
+| **Mabuk** | Tombol **M** (**tahan menunduk + M** = ke diri sendiri) | Sasaran **salah membaca kartu orang lain** sepanjang ronde berikutnya |
+| | | *(ketiganya berbagi satu jatah tindakan per ronde)* |
+| **Lapar** | Tombol **H** (**tahan menunduk + H** = ke diri sendiri) | Sasaran jadi 2x lebih cepat lapar sampai disembuhkan |
+
+Ketiganya masing-masing **dua kali pakai** per permainan, dan cuma bisa dipakai saat
+ronde berjalan.
+
+Tombolnya ada di menu kontrol Minecraft, kategori *Jack of Hearts*: **Skill Racun**,
+**Skill Mabuk**, **Skill Lapar**, dan **Skill ke diri sendiri**. Yang terakhir bawaannya
+**kosong**, dan kosong berarti dipakai tombol menunduk — itu yang bikin "tahan menunduk
++ M" jalan tanpa perlu disetel apa-apa. Isi kalau mau tombol lain. Sengaja tidak langsung
+dipasangi Shift kiri, karena Minecraft akan menandainya bentrok dengan tombol menunduk
+dan mewarnainya merah, padahal keduanya memang dimaksudkan tombol yang sama.
+
+#### Panel skill di pojok kanan bawah
+
+Satu ikon per skill, masing-masing dengan sisa pemakaian dan huruf tombolnya. Ikonnya
+**menyala** kalau skillnya benar-benar bisa dipakai detik itu — ada orang dalam
+jangkauan 2 blok, atau tombol menunduk sedang ditahan, atau untuk racun: crosshair
+sedang menunjuk piring kafetaria — dan **meredup** kalau tidak.
+
+Itu satu-satunya isyarat jangkauan yang dipunya Jack. Menekan tombol lalu ditolak
+diam-diam membuat dia tidak pernah tahu sedekat apa dia harus berdiri.
+
+Panelnya tidak digambar sama sekali untuk yang bukan Jack, dan itu bukan penyaring
+tampilan: sisa pemakaian skill memang tidak pernah dikirim ke client mereka.
+
+#### Kotak sasaran
+
+Orang yang akan kena skill dikotaki merah — **cuma di layar Jack**. Ini bukan hiasan:
+skill mengenai orang terdekat, dan di ruangan yang ramai "terdekat" bisa berpindah dari
+satu orang ke orang lain hanya karena bahu yang bergeser sedikit. Jatah yang cuma dua
+kali itu terlalu mahal untuk dihabiskan sambil menebak.
+
+Sasarannya dipilih client, dan id yang sama itu yang dikirim saat tombolnya ditekan —
+jadi yang dikotaki dan yang kena selalu orang yang sama. Server tetap memeriksa
+jaraknya sendiri, karena id yang dikirim client bisa menunjuk siapa saja.
+
+#### Mabuk: matanya yang berbohong, bukan layarnya
+
+Mabuk **bukan** efek mual. Yang berubah adalah kartu yang dia baca di punggung orang
+lain: sepanjang ronde itu, tiap kartu yang dia lihat digeser 1–3 langkah dari yang
+sebenarnya.
+
+Itulah seluruh isi skill ini. Permainan berputar pada satu hal — kamu tidak bisa
+melihat kartumu sendiri, jadi kamu bergantung pada apa yang dibacakan orang lain. Orang
+yang mabuk membacakan kartu yang salah dengan penuh percaya diri, dan racun
+informasinya menyebar jauh lebih luas daripada satu orang yang dibuat pusing sendirian.
+
+Pergeserannya **tetap**, diturunkan dari UUID pemilik kartu dan nomor ronde, bukan
+diacak tiap frame. Dua akibatnya sama-sama disengaja:
+
+- kartu palsunya **tidak pernah kebetulan benar** (geserannya minimal satu langkah);
+- kartu palsunya **tidak berkedip**. Kartu yang berganti-ganti sendiri akan langsung
+  ketahuan palsu; kartu yang salah tapi diam adalah kartu yang dipercaya.
+
+**Korbannya tidak diberi tahu apa-apa** — dan itu justru seluruh gunanya. Yang tahu
+dirinya sedang dicurangi akan berhenti mempercayai matanya sendiri dan diam; yang tidak
+tahu akan membacakan kartu yang salah dengan mantap ke seluruh ruangan. Sama untuk skill
+lapar: korbannya cuma merasa perutnya cepat sekali kosong, tanpa pernah tahu kenapa.
+
+Semuanya dikerjakan di client yang bersangkutan: tidak ada efek yang dipasang, tidak ada
+yang perlu dilepas, dan keadaannya cuma satu boolean di paket sinkronisasi yang memang
+sudah dikirim tiap 5 tick.
+
+#### Racun
+
+Tatap piring di kafetaria lalu tekan **P**: satu porsi dari **jenis** makanan itu jadi
+beracun. Racunnya menempel ke jenisnya, bukan ke satu piring tertentu — yang diambil
+orang dari meja adalah "satu roti", dan piring mana yang diklik tidak pernah jadi
+pertimbangan siapa pun.
+
+Racun skill, bukan barang. Tidak ada botol di tas Jack, jadi tidak ada yang bisa
+ketahuan dari barang yang kebetulan sedang dipegang, dijatuhkan, atau diintip.
+
+**Piring yang ditatap digaris ungu, cuma di layar Jack.** Perlu, bukan hiasan: selama
+permainan semua peserta di mode adventure, dan di mode itu Minecraft tidak menggambar
+garis blok yang ditatap sama sekali — tanpa garis ini Jack tidak pernah tahu piring mana
+yang sedang ditunjuk crosshair-nya. Garisnya kelabu kalau racunnya sedang tidak bisa
+dipakai (jatah habis, atau sudah ada skill yang dipakai ronde ini). Jangkauannya jangkauan
+tangan: piring yang tidak bisa disentuh tidak bisa diracuni. Server memeriksa ulang
+jaraknya sendiri, karena posisi yang dikirim client bisa menunjuk piring mana saja.
+
+Sesudah itu, tiap kali ada yang mengambil roti, peluangnya **setengah** membawa pulang
+porsi yang salah. Begitu porsi beracunnya terambil, sisanya aman semua.
+
+Peluang setengah itu cuma berlaku selama masih ada porsi lain yang bisa terambil. **Kalau
+sisa porsi jenis itu tinggal sebanyak yang diracuni, yang terambil pasti yang beracun** —
+tidak ada lagi porsi aman untuk diundi. Yang memakannya
+gugur **5 menit** kemudian.
+
+Racun adalah satu-satunya dari ketiganya yang korbannya **diberi tahu**: ada rasa pahit
+saat menelannya, hitung mundurnya berjalan di baris status di samping hasil pemungutan
+suara (`Ronde 2 | 4:37 | 0/9 | 5:00`), dan ada peringatan sekali lagi semenit sebelum
+waktunya habis. Bedanya disengaja — racun adalah lomba melawan waktu, dan lomba yang
+tidak diketahui pesertanya bukan lomba.
+
+#### Satu skill per ronde
+
+Racun, mabuk, dan lapar berbagi **satu jatah tindakan per ronde**. Jatah pemakaiannya
+sendiri tetap terpisah (dua kali mabuk, dua kali lapar, dua kali racun), tapi dalam satu
+ronde Jack cuma boleh melakukan salah satunya.
+
+Kalau tiap skill punya jatah rondenya sendiri, satu ronde bisa diisi mabuk, lapar, dan
+racun sekaligus — dan ronde itu praktis menghabiskan seluruh persediaan Jack dalam sekali
+jalan, sementara sembilan ronde sisanya dia berjalan dengan tangan kosong.
+
+Ikon yang jatah rondenya sudah terpakai ikut meredup, sama seperti ikon yang di luar
+jangkauan.
+
+#### Menyalakan dan mematikan skill
+
+```
+/jack setting drunk on|off      /jack setting drunk max <jumlah>
+/jack setting hunger on|off     /jack setting hunger max <jumlah>
+/jack setting poison on|off     /jack setting poison max <jumlah>
+```
+
+`off` berarti Jack tidak pernah dibekali skill itu sama sekali, dan ikonnya tidak
+digambar. `max` menentukan berapa kali skill itu boleh dipakai dalam satu permainan.
+Berlaku mulai permainan berikutnya.
+
+### Susu: penawarnya
+
+**Satu gelas menyembuhkan satu penyakit, dan yang mana diundi.** Kalau seseorang sedang
+kena dua atau tiga sekaligus, susunya cuma mengangkat salah satunya — dan pesannya
+menyebutkan yang mana: `Racun telah disembuhkan.`
+
+Kalau sekali minum membersihkan semuanya, susu yang langka justru jadi tombol reset:
+siapa pun yang berhasil menemukan satu ember langsung bersih dari seluruh kerja Jack
+sepanjang permainan.
+
+Yang dipakai **ember susu vanilla**, dan susunya diselipkan ke dalam wadah yang **kamu
+tunjuk sendiri**: peti, tungku, dispenser, hopper, dan tong.
+
+```
+/jack setting milk max <jumlah>     (bawaan 10)
+/jack milkreveal                    (di mana saja susu yang belum diambil)
+```
+
+Jatahnya dibagi rata sepanjang `jackWinRound` ronde. Dengan bawaan 10 susu dan 10 ronde:
+satu susu per ronde. Isi 9 dan ada satu ronde tanpa susu; isi 12 dan ada dua ronde yang
+dapat dua. Pembagiannya lewat selisih pembulatan, jadi ronde yang kosong jatuh di
+**tengah** permainan — ronde pertama yang kosong terasa seperti fiturnya rusak, ronde
+kosong di tengah terasa seperti nasib.
+
+**30% susu mendarat di tong, 70% di wadah jenis lain.** Tong berdiri di ruang tebak, yang
+cuma bisa dimasuki di fase menebak — kalau semua wadah diundi rata, sebagian besar susu
+akan mendarat di ruangan yang paling jarang bisa dibuka.
+
+Dan memang begitu: **tong cuma bisa dibuka saat fase menebak.** Di luar fase itu tutupnya
+menolak dibuka, supaya susunya tidak bisa disapu lebih dulu lewat celah pintu yang
+kebetulan terbuka.
+
+Mode kreatif **tidak** dikecualikan — selama permainan berjalan, host yang sedang kreatif
+tetap orang yang bisa mengosongkan tong lebih dulu. Yang dikecualikan cuma Penanda Wadah,
+karena menandai tong memang harus bisa dilakukan kapan saja.
+
+#### Undiannya
+
+Tiap susu diundi dua kali. Pertama jenisnya: **30% tong, 70% bukan tong**. Baru sesudah
+itu wadahnya diacak dari jenis yang menang. Kalau jenis yang menang tidak punya satu pun
+wadah dengan slot kosong, jatahnya jatuh ke jenis satunya daripada hilang begitu saja —
+dan di situlah tong bisa terasa lebih sering dari 30%.
+
+#### Penanda Wadah: menunjuk wadah mana yang ikut
+
+Ambil **Penanda Wadah** dari creative tab, lalu klik kanan peti/tungku/dispenser/hopper/
+tong mana pun. Klik lagi untuk mencabutnya.
+
+Daftarnya **tersimpan ke dalam berkas dunia**, di
+`<folder dunia>/data/jackofhearts_milkspots.dat` — jadi ikut ke mana pun map itu dibawa,
+dan cukup sekali disusun untuk semua permainan berikutnya. Sama seperti penataan meja
+kafetaria, ini penataan map, bukan keadaan satu permainan.
+
+Wadahnya ditunjuk satu per satu, bukan dicari otomatis, karena map yang luas hampir pasti
+punya wadah di luar arena permainan — peti penyimpanan, tungku dekorasi, hopper mesin
+redstone. Susu yang mendarat di sana sama saja tidak pernah muncul.
+
+Jenis wadah yang boleh dipakai bisa dimatikan satu per satu:
+
+```
+/jack milkspots hopper false
+/jack milkspots hopper true
+```
+
+Mematikan satu jenis **tidak** menghapus titik yang sudah ditandai — titiknya cuma
+dilewati saat susu dibagikan. Menyalakannya lagi mengembalikan semuanya apa adanya, tanpa
+perlu ditandai ulang.
+
+Untuk memeriksa mana saja yang sudah terdaftar:
+
+```
+/jack checkblock true      (wadah terdaftar berpercik hijau)
+/jack checkblock false
+/jack checkblock           (bergantian on/off)
+```
+
+Balasannya juga menyebut isi kolam undiannya:
+
+```
+Terdaftar: 4 tong, 8 lainnya | siap diisi: 4 tong, 2 lainnya
+```
+
+Selisih antara "terdaftar" dan "siap diisi" biasanya jadi jawaban kalau susunya terasa
+menumpuk di satu jenis wadah: **wadah yang semua slotnya sudah terisi tidak ikut diundi
+sama sekali**, jadi jatah 70% untuk wadah non-tong bisa jatuh balik ke tong karena tidak
+ada tempat lain yang kosong.
+
+Yang dipakai **percikan partikel**, bukan bloknya diganti jadi sesuatu yang mencolok.
+Mengganti blok berarti menyimpan blok aslinya dan mengembalikannya nanti, dan satu
+kegagalan di jalur itu — server mati di tengah pemeriksaan — meninggalkan map yang rusak.
+Percikan tidak pernah bisa merusak apa pun.
+
+Wadah yang sudah terdaftar tapi bloknya keburu dibongkar akan dicoret sendiri dari daftar
+saat susu berikutnya dibagikan.
+
+#### Kenapa memakai blok vanilla, bukan blok buatan sendiri
+
+Setelah wadahnya ditunjuk satu per satu, blok tiruan tidak menyisakan satu pun kelebihan:
+yang membedakan wadah permainan dari wadah biasa sekarang adalah daftarnya, bukan jenis
+bloknya. Yang tersisa cuma pekerjaannya — peti digambar lewat block entity renderer
+sendiri lengkap dengan animasi tutupnya, dan menirunya berarti menyalin seluruh jalur itu
+hanya supaya hasilnya terlihat sama dengan yang sudah ada.
+
 ### Sesama Jack saling kenal
 
 Kalau Jack lebih dari satu, tiap Jack melihat **nama rekannya berwarna merah** di atas
@@ -115,6 +380,11 @@ Jack yang kebetulan sedang keluar dari server tidak jadi satu-satunya nama yang 
 merah.
 
 ### Pembagian peran
+
+Tepat saat animasi dimulai, chat semua orang dapat spanduk pembuka `🔪 GAME DIMULAI 🔪`
+lengkap dengan logo Discord dan kredit dev — bentuknya sama dengan spanduk mod Deception.
+Logonya glyph dari font ikon mod ini sendiri (`assets/jackofhearts/font/icons.json`,
+karakter U+E000), bukan emoji, jadi font vanilla tidak tersentuh.
 
 `/jack start` mengocok peran, lalu setiap peserta melihat **animasi kocok kartu**
 selama ~9 detik:
@@ -155,7 +425,8 @@ bar:
 Ronde 2 | 4:37 | 3/5
 ```
 
-Ronde, sisa waktu, dan hasil pemungutan suara percepat ronde. Di fase menebak, bagian
+Ronde, sisa waktu, dan hasil pemungutan suara percepat ronde. Yang sedang keracunan
+dapat satu ruas lagi di ujungnya: sisa waktu sebelum racunnya bekerja. Di fase menebak, bagian
 ketiga diganti hal yang paling menentukan detik itu — `Belum menebak!` atau
 `Tebakan: ♥` — karena di situ sudah tidak ada yang bisa dipercepat lagi. Yang sudah
 gugur melihat `TERELIMINASI`.
@@ -477,6 +748,124 @@ orangnya keluar tidak pernah punya kesempatan melihatnya.
 
 ---
 
+## Membungkus map ke dalam mod
+
+Mod ini membawa **dimensi sendiri**: `jackofhearts:arena`. Map-nya ikut di dalam jar
+sebagai **dunia jadi** — berkas region, bukan schematic — jadi dunia baru mana pun
+langsung punya arena yang sama persis.
+
+### Kenapa dimensi sendiri
+
+Map permainan ini punya aturan yang bertabrakan dengan dunia biasa: pintu yang mengunci
+sendiri, tong yang cuma bisa dibuka di fase tertentu, dan wadah yang ditandai jadi tempat
+susu. Menaruhnya di overworld berarti aturan-aturan itu harus dijaga supaya tidak merembet
+ke bangunan pemain di luar arena. Dimensi terpisah membuat batasnya jadi hal yang tidak
+perlu dijaga sama sekali.
+
+### Kenapa dunia jadi, bukan schematic
+
+Schematic harus dipasang blok demi blok di satu tick: server diam beberapa detik, cahaya
+dihitung ulang dari nol, dan tiap block entity dibangun ulang dari palet teks. Berkas
+region tidak melewati satu pun dari itu — chunk-nya sudah jadi, lengkap dengan cahaya,
+block entity, dan blok milik mod lain apa adanya. Yang dikerjakan cuma menyalin berkas.
+
+### Cara membungkus map-mu
+
+1. **Bangun map-nya di dimensi arena.** `/jack gotoarena` (dunia void, mulai dari nol),
+   atau pasang sekali dari schematic dengan `/jack pastearena` lalu rapikan di situ.
+2. **Tandai wadah susunya** dengan Penanda Wadah, lalu `/jack milkspots export` —
+   berkasnya muncul di `config/jackofhearts/milkspots.json`, siap disalin ke
+   `src/main/resources/data/jackofhearts/`.
+3. **`/jack arena export`** — dunianya disimpan dulu, lalu berkasnya disalin ke
+   `config/jackofhearts/arena_world/`.
+
+> **Daftar wadah susu tidak ikut di dalam berkas dunia.** Dia tinggal di penyimpanan data
+> overworld, karena itu satu-satunya dunia yang pasti ada. Yang membawanya berpindah dunia
+> adalah `/jack milkspots export` dan `import` — dan `import` mendaftarkan semuanya ke
+> **dimensi tempat perintahnya dijalankan**, jadi berdirilah di dalam map-nya saat
+> menjalankannya.
+4. **Pindahkan isinya** ke `src/main/resources/data/jackofhearts/arena_world/`, lalu build
+   ulang.
+
+```
+src/main/resources/data/jackofhearts/arena_world/
+├── region/     ← berkas .mca, ini yang wajib
+├── entities/   ← entitas yang ikut disimpan chunk
+├── poi/
+└── data/       ← data dimensi
+```
+
+Sesudah itu, dunia baru mana pun tinggal `/jack gotoarena` — map-nya sudah ada di sana.
+
+### Tidak ada mob di arena
+
+Mob apa pun ditolak masuk dimensi arena, dari sumber mana pun — spawn alami, spawner,
+telur, ternak yang beranak, maupun `/summon`. Bisa dimatikan lewat `arenaNoMobs`.
+
+Diperiksa saat entitasnya **bergabung ke dunia**, bukan saat spawn alaminya dinilai:
+spawn alami cuma satu dari banyak jalan masuk, dan satu pintu yang dijaga lebih rapat
+daripada lima. Mayat, badan pengganti, kursi, dan kamera sinematik bukan mob, jadi
+semuanya tetap bisa masuk.
+
+### Kapan map bawaan dipasang
+
+Saat server **hampir** menyala, sebelum satu dunia pun dimuat, dan **hanya kalau folder
+dimensi arenanya masih kosong**. Waktunya menentukan: kalau dipasang belakangan, chunk
+arena yang sudah terlanjur dibuat sebagai void akan menang dan berkas region bawaannya
+tidak pernah terbaca.
+
+Dunia yang arenanya sudah punya isi **tidak pernah ditimpa** — bangunan yang diubah di
+server tetap milik server itu.
+
+### Berkas lain yang bisa ikut dibungkus
+
+| Berkas | Letaknya di sumber mod | Isinya |
+|---|---|---|
+| `food.schem` | `data/jackofhearts/schematics/` | Meja kafetaria, dipasang ulang tiap `/jack start` |
+| `arena.schem` | `data/jackofhearts/schematics/` | Map arena versi schematic, kalau mau lewat `/jack pastearena` |
+| `milkspots.json` | `data/jackofhearts/` | Daftar wadah susu |
+
+Semuanya dibaca dari `config/jackofhearts/` lebih dulu kalau ada di situ — itu cara
+menggantinya tanpa membongkar jar.
+
+### Perintah arena
+
+| Perintah | Fungsi |
+|---|---|
+| `/jack gotoarena` | Pindah ke arena, di titik `arenaSpawn` |
+| `/jack gotooverworld` | Kembali ke titik spawn overworld |
+| `/jack arena export` | Salin dimensi arena sekarang ke `config/`, siap dibungkus ke mod |
+| `/jack pastearena` | Pasang map arena dari schematic (jalur alternatif) |
+| `/jack milkspots export` | Tulis daftar wadah susu ke `config/jackofhearts/` |
+| `/jack milkspots import` | Muat daftar wadah susu dari berkas (config, lalu jar) |
+
+`/jack pastearena` cuma jalur alternatif kalau map-mu masih berupa schematic. Isinya bisa
+jutaan blok dan dipasang di satu tick, jadi servernya akan diam beberapa detik — itu
+sebabnya dia perintah tersendiri, dan sebabnya map yang sudah jadi lebih baik dibungkus
+sebagai dunia.
+
+### Yang terjadi saat `/jack start`
+
+Sebelum satu kartu pun dibagikan, semuanya disiapkan dulu:
+
+1. semua peserta dipindahkan ke **`arenaSpawn`** di dimensi arena;
+2. mode permainan jadi **adventure**;
+3. kesulitan dunia jadi **hard**;
+4. **PvP dimatikan** (nilai lamanya disimpan dan dikembalikan saat permainan berhenti);
+5. **jangkauan tangan jadi 3 blok** (`blockReach`) — vanilla 4,5, yang membuat setengah
+   ruangan bisa disentuh dari ambang pintu;
+6. **nyawa jadi 5 (2,5 hati)** (`playerHealth`) — batang nyawanya ikut memendek, bukan
+   cuma diisi separuh, jadi yang terlihat pemain adalah keadaan yang sebenarnya;
+7. **tas dikosongkan** dan **slot hotbar 1** yang terpegang;
+8. baru animasi kocok kartu jalan.
+
+Semuanya di satu tempat karena semuanya harus selesai **sebelum** layar kocok kartu muncul:
+pemain yang masih tersebar di seluruh map saat animasinya jalan akan melihat kartunya
+membalik sambil berdiri di tempat yang salah, dan begitu layarnya tertutup dia sudah
+tertinggal satu ronde.
+
+---
+
 ## Yang harus kamu siapkan di dunia
 
 1. Ambil **Terminal Tebakan** (`jackofhearts:guess_block`) dari creative tab
@@ -783,6 +1172,36 @@ angka di atas dihitung untuk itu.
 > Sebaliknya, kalau `roundSeconds` masih 600 (10 menit per ronde) permainannya dua kali
 > lebih panjang: kalikan dua `foodPerPlayer`.
 
+### Kalau kafetarianya "kosong padahal mejanya jelas ada"
+
+Hampir selalu satu sebab: **mesin permainan sedang melihat dimensi yang berbeda dengan
+yang kamu tempati.** Ada dua setelan dimensi, dan keduanya gampang ketinggalan menunjuk
+dunia lama:
+
+| Setelan | Isinya |
+|---|---|
+| `arenaDimension` | Dunia tempat permainan berlangsung |
+| `areaDimension` | Dunia tempat kotak kafetaria berada |
+
+`/jack setting list` menampilkan keduanya beserta dunia yang sedang kamu tempati, dan
+menandai yang dunianya tidak ada:
+
+```
+arena: jackofhearts:arena | kafetaria: minecraft:overworld | kamu di: minecraft:overworld
+Arena dan kafetaria di dimensi yang berbeda. Biasanya keduanya harus sama.
+```
+
+Membetulkannya tidak perlu menyentuh berkas config — berdiri di tempatnya, lalu:
+
+```
+/jack setting arenahere              (dimensi arena + titik kumpul = posisimu)
+/jack setting area <sudut> <sudut>   (kotak kafetaria + dimensinya = tempat kamu berdiri)
+```
+
+> Ingat: angka di kode cuma dipakai saat berkas config dibuat pertama kali. Server yang
+> sudah pernah jalan memakai isi `config/jackofhearts-common.toml`, dan di situlah setelan
+> lama bertahan.
+
 ### Meja dipasang ulang dari schematic
 
 Kafetaria ini memulihkan mejanya sendiri dari potret yang dibaca berkala, dan itu cukup
@@ -806,8 +1225,27 @@ foodSchematicOrigin = "-4 1 -44"
 ```
 
 `foodSchematicOrigin` adalah tempat mendaratnya **sudut schematic dengan koordinat
-paling kecil** (blok pertama di dalamnya). Kalau hasilnya meleset, geser angka ini —
-bukan schematic-nya.
+paling kecil** (blok pertama di dalamnya) — bukan titik tempat kamu berdiri saat
+menyalinnya di WorldEdit. Kalau hasilnya meleset, geser titik ini sebanyak selisihnya.
+
+> **Mengubah angkanya di kode tidak ada gunanya kalau servernya sudah pernah jalan.**
+> Angka di `defineInRange`/`define` cuma dipakai saat berkas config dibuat pertama kali;
+> sesudah itu isi `config/jackofhearts-common.toml` yang menang. Ubah lewat perintah:
+>
+> ```
+> /jack setting foodschem ~ ~ ~     (berdiri tepat di sudut yang dituju)
+> /jack setting foodschem -4 1 -45
+> /jack refill                      (pasang sekarang juga)
+> ```
+
+Tiap kali dipasang, batas hasilnya dicatat ke log server:
+
+```
+[JackOfHearts] Schematic makanan: 320 blok, -4, 1, -45 .. 2, 3, -40
+```
+
+Bandingkan angka itu dengan sudut meja yang sebenarnya — selisihnya persis yang perlu
+ditambahkan ke `foodschem`, jadi tidak perlu ditebak sama sekali.
 
 Yang dibaca format **Sponge Schematic** (`.schem` keluaran WorldEdit), versi 2 maupun 3.
 Format lama `.schematic` bawaan MCEdit tidak dibaca: isinya id blok berupa angka dari
@@ -957,13 +1395,28 @@ sedang mencari mangsa.
 | `/jack unregisall` | Kosongkan seluruh daftar |
 | `/jack listplayer` | Tampilkan daftar terdaftar + status online/offline |
 | `/jack start` | Kocok peran dan mulai game dengan pemain **terdaftar**; gagal kalau daftar kosong |
-| `/jack setting setjack <targets> [once\|always]` | Pemain ini **pasti** dapat peran Jack; tanpa argumen = `once` |
-| `/jack setting unsetjack <targets>` | Batalkan penunjukan itu |
-| `/jack setting clearjack` | Kosongkan seluruh daftar setjack |
-| `/jack setting maxjack <angka>` | Berapa Jack yang dibagikan; tersimpan ke config |
+| `/jack setting jack max <angka>` | Berapa Jack yang dibagikan; tersimpan ke config |
+| `/jack setting jack set <targets> [once\|always]` | Pemain ini **pasti** dapat peran Jack; tanpa argumen = `once` |
+| `/jack setting jack unset <targets>` | Batalkan penunjukan itu |
+| `/jack setting jack clear` | Kosongkan seluruh daftar penunjukan Jack |
+| `/jack setting unknown set <targets> [once\|always]` | Pemain ini **pasti** dapat peran Unknown; tanpa argumen = `once` |
+| `/jack setting unknown unset <targets>` | Batalkan penunjukan itu |
+| `/jack setting unknown clear` | Kosongkan seluruh daftar penunjukan Unknown |
 | `/jack refill` | Pasang ulang meja dari schematic dan isi stok penuh dengan `maxfood` terbaru |
 | `/jack setting maxfood <porsi>` | Stok satu game, angka pasti |
 | `/jack setting maxfood default` | Kembali ke bawaan: **8 porsi x jumlah pemain** |
+| `/jack setting drunk on\|off\|max <n>` | Nyalakan/matikan skill Mabuk, atau atur jatahnya |
+| `/jack setting hunger on\|off\|max <n>` | Sama, untuk skill Lapar |
+| `/jack setting poison on\|off\|max <n>` | Sama, untuk skill Racun |
+| `/jack setting unknown on\|off\|max <n>` | Bagikan peran Unknown atau tidak (bawaan **off**), dan berapa orang (bawaan **1**) |
+| `/jack setting milk max <n>` | Berapa susu yang muncul sepanjang satu permainan |
+| `/jack milkreveal` | Di mana saja susu yang belum diambil |
+| `/jack checkblock [true\|false]` | Percikan penanda di atas tiap wadah terdaftar |
+| `/jack milkspots clear` | Kosongkan seluruh daftar wadah susu |
+| `/jack milkspots <jenis> <true\|false>` | Nyalakan/matikan satu jenis wadah: `chest`, `furnace`, `dispenser`, `hopper`, `barrel` |
+| `/jack setting area <from> <to>` | Kotak kafetaria **beserta dimensinya**, diambil dari tempat kamu berdiri |
+| `/jack setting arenahere` | Dimensi arena + titik kumpulnya, diambil dari tempat kamu berdiri |
+| `/jack setting foodschem <x y z>` | Sudut mendaratnya schematic meja; `~ ~ ~` = posisimu |
 | `/jack setting settimer round <detik>` | Durasi satu ronde |
 | `/jack setting settimer guess <detik>` | Durasi fase menebak |
 | `/jack setting hungermultiplier <angka>` | Pengali kecepatan lapar; boleh pecahan (`2.5`) |
@@ -974,25 +1427,32 @@ sedang mencari mangsa.
 | `/jack skip` | **Semua pemain.** Satu suara untuk mempercepat ronde ke fase menebak |
 | `/jack forceskip` | Host: potong sisa waktu fase yang sedang berjalan, tanpa menunggu siapa pun |
 | `/jack debug true\|false [<targets>]` | Tebakan sasaran dinilai **benar** untuk **ronde yang sedang berjalan saja** (buat testing); tanpa target = dirimu sendiri |
-| `/jack shuffle <pemain> [<jack>] [as_jack\|as_ace]` | Putar animasi kartu untuk preview, tanpa memulai game |
+| `/jack shuffle <pemain> [<jack>] [as_jack\|as_ace\|as_unknown]` | Putar animasi kartu untuk preview, tanpa memulai game |
 | `/jack reveal` | Tampilkan peran + simbol semua peserta, hanya ke kamu (host) |
-| `/jack debugrole` | Daftar peran semua peserta dikelompokkan per peran, tanpa simbol |
 
-### `setjack` dan `maxjack`
+### Penunjukan peran: `jack set` dan `unknown set`
 
-`maxjack` adalah batas yang **dinaikkan** oleh `setjack`, bukan yang membatasinya.
-Kalau `maxjack` 2 tapi ada 3 orang yang ditunjuk `setjack`, yang mengalah batasnya —
-game itu dibagikan 3 Jack. Menolak orang ketiga berarti perintah yang sudah
-dijalankan host diam-diam tidak berlaku, dan dia baru sadar setelah gamenya jalan.
+`jack max` adalah batas yang **dinaikkan** oleh `jack set`, bukan yang membatasinya.
+Kalau `jack max` 2 tapi ada 3 orang yang ditunjuk, yang mengalah batasnya — game itu
+dibagikan 3 Jack. Menolak orang ketiga berarti perintah yang sudah dijalankan host
+diam-diam tidak berlaku, dan dia baru sadar setelah gamenya jalan.
 
-Yang ditunjuk pasti dapat Jack; sisa kursi Jack yang belum terisi tetap jatuh ke
-orang acak seperti biasa. Yang sedang offline atau jadi penonton saat `/jack start`
-tidak dihitung sama sekali.
+`unknown set` sama persis terhadap `unknown max`, dan **tetap berlaku walau peran
+Unknown sedang `off`**: host yang mengetik "orang ini Unknown" jelas ingin ada Unknown
+di game itu. Satu-satunya yang bisa mengalahkannya adalah jumlah pemain — selalu
+disisakan paling tidak satu Ace, dan yang ditunjuk tapi tidak kebagian kursi jadi Ace.
+
+Satu orang cuma bisa ditunjuk untuk satu peran: menunjuknya jadi Unknown mencabut
+penunjukannya jadi Jack, dan sebaliknya.
+
+Yang ditunjuk pasti dapat perannya; sisa kursi yang belum terisi tetap jatuh ke orang
+acak seperti biasa. Yang sedang offline atau jadi penonton saat `/jack start` tidak
+dihitung sama sekali.
 
 `once` (dan itu yang berlaku kalau argumennya tidak diisi) hangus begitu `/jack start`
 dijalankan — di detik penunjukannya terpakai, bukan saat gamenya selesai. Game yang
 dihentikan di tengah jalan tetap menghabiskan jatahnya, jadi "sekali" benar-benar
-berarti sekali. `always` bertahan sampai dibatalkan dengan `unsetjack`/`clearjack`.
+berarti sekali. `always` bertahan sampai dibatalkan dengan `unset`/`clear`.
 
 Yang harus diketik justru `always`, karena penunjukan yang berlaku selamanya adalah
 yang paling gampang dilupakan.

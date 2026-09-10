@@ -38,6 +38,13 @@ public class RoleRevealScreen extends Screen {
             new ResourceLocation(JackOfHeartsMod.MOD_ID, "textures/gui/card_jack.png");
     private static final ResourceLocation CARD_ACE =
             new ResourceLocation(JackOfHeartsMod.MOD_ID, "textures/gui/card_ace.png");
+    /**
+     * Kartu Unknown: Joker ungu. Gambarnya diturunkan dari "Cards-Joker-Black.svg" karya
+     * GW Simulations di Wikimedia Commons (domain publik), dipasang ke bingkai kartu yang
+     * sama dengan Jack dan Ace.
+     */
+    private static final ResourceLocation CARD_UNKNOWN =
+            new ResourceLocation(JackOfHeartsMod.MOD_ID, "textures/gui/card_unknown.png");
 
     /** Ukuran asli tekstur kartu; digambar apa adanya lalu diperbesar lewat PoseStack. */
     private static final int CARD_W = 47;
@@ -95,11 +102,13 @@ public class RoleRevealScreen extends Screen {
     private final boolean preview;
     private final int cardCount;
     private final int jackCards;
+    private final int unknownCards;
     /** Angka sebenarnya untuk teks, tanpa dibatasi jumlah kartu yang muat digambar. */
     private final int totalPlayers;
     private final int totalJacks;
-    /** Posisi mana saja di barisan yang berisi kartu Jack. Murni kosmetik. */
-    private final boolean[] isJackSlot;
+    private final int totalUnknowns;
+    /** Kartu apa yang ada di tiap posisi barisan. Murni kosmetik. */
+    private final Role[] slots;
     private final RandomSource random = RandomSource.create();
 
     private int ticks;
@@ -111,31 +120,42 @@ public class RoleRevealScreen extends Screen {
     private final boolean[] shuffleSoundPlayed =
             new boolean[Math.max(1, (int) (SHUFFLE_CYCLES * SHUFFLE_SOUNDS_PER_CYCLE))];
 
-    public RoleRevealScreen(Role role, int cardCount, int jackCards,
-                            int totalPlayers, int totalJacks, boolean preview) {
+    public RoleRevealScreen(Role role, int cardCount, int jackCards, int unknownCards,
+                            int totalPlayers, int totalJacks, int totalUnknowns, boolean preview) {
         super(Component.translatable("screen.jackofhearts.reveal"));
         this.role = role;
         this.preview = preview;
         this.cardCount = Math.max(cardCount, 1);
         this.jackCards = Mth.clamp(jackCards, 0, this.cardCount);
+        this.unknownCards = Mth.clamp(unknownCards, 0, this.cardCount - this.jackCards);
         this.totalPlayers = Math.max(totalPlayers, this.cardCount);
         this.totalJacks = Math.max(totalJacks, 0);
-        this.isJackSlot = buildSlots(this.cardCount, this.jackCards);
+        this.totalUnknowns = Math.max(totalUnknowns, 0);
+        this.slots = buildSlots(this.cardCount, this.jackCards, this.unknownCards);
     }
 
-    /** Sebar kartu Jack ke posisi acak di barisan supaya tidak selalu menumpuk di kiri. */
-    private static boolean[] buildSlots(int count, int jacks) {
-        boolean[] slots = new boolean[count];
+    /**
+     * Sebar kartu Jack dan Unknown ke posisi acak di barisan supaya tidak selalu
+     * menumpuk di kiri.
+     */
+    private static Role[] buildSlots(int count, int jacks, int unknowns) {
+        Role[] slots = new Role[count];
+        java.util.Arrays.fill(slots, Role.ACE);
         RandomSource rng = RandomSource.create();
+        place(slots, rng, Role.JACK, jacks);
+        place(slots, rng, Role.UNKNOWN, unknowns);
+        return slots;
+    }
+
+    private static void place(Role[] slots, RandomSource rng, Role role, int amount) {
         int placed = 0;
-        while (placed < jacks) {
-            int at = rng.nextInt(count);
-            if (!slots[at]) {
-                slots[at] = true;
+        while (placed < amount) {
+            int at = rng.nextInt(slots.length);
+            if (slots[at] == Role.ACE) {
+                slots[at] = role;
                 placed++;
             }
         }
-        return slots;
     }
 
     // ------------------------------------------------------------------ siklus hidup
@@ -411,11 +431,19 @@ public class RoleRevealScreen extends Screen {
     }
 
     private ResourceLocation slotTexture(int index) {
-        return isJackSlot[index] ? CARD_JACK : CARD_ACE;
+        return texture(slots[index]);
     }
 
     private ResourceLocation roleTexture() {
-        return role == Role.JACK ? CARD_JACK : CARD_ACE;
+        return texture(role);
+    }
+
+    private static ResourceLocation texture(Role role) {
+        return switch (role) {
+            case JACK -> CARD_JACK;
+            case UNKNOWN -> CARD_UNKNOWN;
+            case ACE -> CARD_ACE;
+        };
     }
 
     private void renderCaption(GuiGraphics graphics, float t) {
@@ -424,9 +452,13 @@ public class RoleRevealScreen extends Screen {
         if (t < T_CLOSE_END) {
             // Angkanya jumlah pemain sebenarnya, bukan jumlah kartu yang muat digambar.
             int captionY = (int) lineupBottom() + 10;
-            graphics.drawCenteredString(this.font,
-                    Component.translatable("screen.jackofhearts.reveal.lineup", totalPlayers, totalJacks)
-                            .withStyle(ChatFormatting.GOLD),
+            // Baris Unknown cuma muncul kalau memang ada: di permainan tanpa Unknown,
+            // "0 UNKNOWN" hanya mengingatkan semua orang pada peran yang tidak dimainkan.
+            Component lineup = totalUnknowns > 0
+                    ? Component.translatable("screen.jackofhearts.reveal.lineup_unknown",
+                            totalPlayers, totalJacks, totalUnknowns)
+                    : Component.translatable("screen.jackofhearts.reveal.lineup", totalPlayers, totalJacks);
+            graphics.drawCenteredString(this.font, lineup.copy().withStyle(ChatFormatting.GOLD),
                     this.width / 2, captionY, 0xFFFFFF);
             if (totalPlayers > cardCount) {
                 graphics.drawCenteredString(this.font,

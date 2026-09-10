@@ -21,6 +21,8 @@ public class ClientGameState {
     public static boolean participating;
     public static boolean alive;
     public static boolean lockView;
+    /** Kartu di punggung orang lain terbaca salah selama ini menyala. */
+    public static boolean drunk;
     @Nullable
     public static Role role;
     @Nullable
@@ -50,7 +52,8 @@ public class ClientGameState {
         participating = packet.participating();
         alive = packet.alive();
         lockView = packet.lockView();
-        role = packet.role() >= 0 ? Role.values()[packet.role()] : null;
+        drunk = packet.drunk();
+        role = packet.role() >= 0 ? Role.byOrdinal(packet.role()) : null;
         savedGuess = Symbol.byOrdinal(packet.savedGuess());
     }
 
@@ -59,9 +62,7 @@ public class ClientGameState {
     }
 
     public static void openRoleRevealScreen(OpenRoleRevealPacket packet) {
-        Role revealed = packet.role() >= 0 && packet.role() < Role.values().length
-                ? Role.values()[packet.role()]
-                : Role.ACE;
+        Role revealed = Role.byOrdinal(packet.role());
         // Preview tidak boleh menyentuh state game; ia cuma menumpang layarnya.
         if (!packet.preview()) {
             role = revealed;
@@ -69,8 +70,8 @@ public class ClientGameState {
             ticksLeft = packet.ticksLeft();
         }
         Minecraft.getInstance().setScreen(
-                new RoleRevealScreen(revealed, packet.cardCount(), packet.jackCards(),
-                        packet.totalPlayers(), packet.totalJacks(), packet.preview()));
+                new RoleRevealScreen(revealed, packet.cardCount(), packet.jackCards(), packet.unknownCards(),
+                        packet.totalPlayers(), packet.totalJacks(), packet.totalUnknowns(), packet.preview()));
     }
 
     public static void openGuessScreen(OpenGuessScreenPacket packet) {
@@ -96,6 +97,7 @@ public class ClientGameState {
         participating = false;
         alive = false;
         lockView = false;
+        drunk = false;
         role = null;
         savedGuess = null;
         symbolShuffleTicks = 0;

@@ -30,6 +30,27 @@ public class JackConfig {
     public final ForgeConfigSpec.BooleanValue lockFirstPerson;
     public final ForgeConfigSpec.BooleanValue eliminateOnWrongGuess;
     public final ForgeConfigSpec.IntValue jackOfflineSeconds;
+    public final ForgeConfigSpec.ConfigValue<String> arenaDimension;
+    public final ForgeConfigSpec.ConfigValue<String> arenaSpawn;
+    public final ForgeConfigSpec.ConfigValue<String> arenaSchematic;
+    public final ForgeConfigSpec.ConfigValue<String> arenaSchematicOrigin;
+    public final ForgeConfigSpec.IntValue blockReach;
+    public final ForgeConfigSpec.IntValue playerHealth;
+    public final ForgeConfigSpec.BooleanValue arenaNoMobs;
+    public final ForgeConfigSpec.BooleanValue milkChest;
+    public final ForgeConfigSpec.BooleanValue milkFurnace;
+    public final ForgeConfigSpec.BooleanValue milkDispenser;
+    public final ForgeConfigSpec.BooleanValue milkHopper;
+    public final ForgeConfigSpec.BooleanValue milkBarrel;
+    public final ForgeConfigSpec.BooleanValue skillDrunk;
+    public final ForgeConfigSpec.IntValue skillDrunkMax;
+    public final ForgeConfigSpec.BooleanValue skillHunger;
+    public final ForgeConfigSpec.IntValue skillHungerMax;
+    public final ForgeConfigSpec.BooleanValue skillPoison;
+    public final ForgeConfigSpec.IntValue skillPoisonMax;
+    public final ForgeConfigSpec.IntValue milkMax;
+    public final ForgeConfigSpec.BooleanValue unknownRole;
+    public final ForgeConfigSpec.IntValue unknownMax;
 
     public final ForgeConfigSpec.DoubleValue hungerMultiplier;
     public final ForgeConfigSpec.DoubleValue hungerIdleDrain;
@@ -116,6 +137,103 @@ public class JackConfig {
         eliminateOnWrongGuess = builder
                 .comment("Salah menebak / tidak menebak = ditembak laser dan tereliminasi.")
                 .define("eliminateOnWrongGuess", true);
+
+        arenaDimension = builder
+                .comment("Dimensi tempat permainan berlangsung. Bawaannya dimensi arena milik",
+                        "mod ini sendiri - dunia void yang isinya dipasang dari schematic.",
+                        "Ganti kalau map-mu tinggal di dimensi lain.")
+                .define("arenaDimension", "jackofhearts:arena");
+
+        arenaSpawn = builder
+                .comment("Titik kumpul di arena (x y z). Semua peserta dipindahkan ke sini saat",
+                        "/jack start, dan ke sini juga /jack gotoarena mengantar.")
+                .define("arenaSpawn", "0 0 0");
+
+        arenaSchematic = builder
+                .comment("Nama berkas schematic seluruh map arena, dicari di config/jackofhearts/",
+                        "lalu di dalam jar mod. Dipasang lewat /jack pastearena - sekali saja saat",
+                        "menyiapkan dunia, bukan tiap permainan.",
+                        "Kosongkan untuk mematikan pemasangan arena.")
+                .define("arenaSchematic", "arena.schem");
+
+        arenaSchematicOrigin = builder
+                .comment("Koordinat sudut schematic arena yang paling kecil (x y z).")
+                .define("arenaSchematicOrigin", "0 0 0");
+
+        blockReach = builder
+                .comment("Jangkauan tangan peserta selama permainan, dalam blok. Vanilla 4.5.",
+                        "Dipasang saat /jack start dan dikembalikan saat permainan berhenti.")
+                .defineInRange("blockReach", 3, 1, 10);
+
+        playerHealth = builder
+                .comment("Nyawa peserta selama permainan, dalam setengah hati. Vanilla 20.",
+                        "Default 5 (2,5 hati): jatuh dari ketinggian sedang saja sudah cukup,",
+                        "dan kelaparan tidak perlu berjam-jam untuk menghabisi orang.",
+                        "Dipasang saat /jack start dan dikembalikan saat permainan berhenti.")
+                .defineInRange("playerHealth", 5, 1, 20);
+
+        arenaNoMobs = builder
+                .comment("Tolak semua mob masuk ke dimensi arena, dari sumber mana pun -",
+                        "spawn alami, spawner, telur, maupun /summon.",
+                        "Biome arena memang tidak punya daftar spawn, tapi itu cuma menutup",
+                        "spawn alami; yang lain tetap lolos.")
+                .define("arenaNoMobs", true);
+
+        milkChest = builder.comment("Peti boleh jadi tempat susu.").define("milkChest", true);
+        milkFurnace = builder.comment("Tungku boleh jadi tempat susu.").define("milkFurnace", true);
+        milkDispenser = builder.comment("Dispenser/dropper boleh jadi tempat susu.")
+                .define("milkDispenser", true);
+        milkHopper = builder.comment("Hopper boleh jadi tempat susu.").define("milkHopper", true);
+        milkBarrel = builder.comment("Tong boleh jadi tempat susu.").define("milkBarrel", true);
+
+        skillDrunk = builder
+                .comment("Jack punya skill Mabuk. Disetel lewat /jack setting drunk on|off.")
+                .define("skillDrunk", true);
+
+        skillDrunkMax = builder
+                .comment("Berapa kali skill Mabuk boleh dipakai dalam satu permainan.")
+                .defineInRange("skillDrunkMax", 2, 0, 64);
+
+        skillHunger = builder
+                .comment("Jack punya skill Lapar. Disetel lewat /jack setting hunger on|off.")
+                .define("skillHunger", true);
+
+        skillHungerMax = builder
+                .comment("Berapa kali skill Lapar boleh dipakai dalam satu permainan.")
+                .defineInRange("skillHungerMax", 2, 0, 64);
+
+        skillPoison = builder
+                .comment("Jack punya skill Racun (tombol P sambil menatap piring kafetaria).",
+                        "Disetel lewat /jack setting poison on|off.")
+                .define("skillPoison", true);
+
+        skillPoisonMax = builder
+                .comment("Berapa kali skill Racun boleh dipakai dalam satu permainan.")
+                .defineInRange("skillPoisonMax", 2, 0, 64);
+
+        unknownRole = builder
+                .comment("Bagikan peran Unknown. Unknown belum punya pihak: kalau ada Jack yang gugur",
+                        "selagi dia masih hidup, dia ikut Ace; kalau semua Ace habis dan dia tinggal",
+                        "sendiri, dia jadi Jack. Unknown yang gugur sebelum pihaknya ditentukan tidak",
+                        "ikut menang siapa-siapa.",
+                        "Disetel lewat /jack setting unknown on|off.")
+                .define("unknownRole", false);
+
+        unknownMax = builder
+                .comment("Berapa pemain yang jadi Unknown. Dikurangi sendiri kalau pemainnya tidak",
+                        "cukup: selalu disisakan paling tidak satu Ace.",
+                        "Disetel lewat /jack setting unknown max <jumlah>.")
+                .defineInRange("unknownMax", 1, 1, 16);
+
+        milkMax = builder
+                .comment("Berapa susu penawar yang muncul sepanjang satu permainan.",
+                        "Jatahnya dibagi rata ke jackWinRound ronde. Dengan default 20 susu dan",
+                        "10 ronde: dua susu per ronde. Isi 9 dan ada satu ronde tanpa susu; isi",
+                        "12 dan ada dua ronde yang dapat dua.",
+                        "Susunya diselipkan ke peti, tungku, dispenser, hopper, dan tong yang",
+                        "tersebar di map - 30% ke tong, sisanya ke wadah jenis lain.",
+                        "Disetel lewat /jack setting milk max <jumlah>.")
+                .defineInRange("milkMax", 20, 0, 1000);
 
         jackOfflineSeconds = builder
                 .comment("Berapa lama Jack boleh keluar dari server sebelum dieksekusi laser dari",
@@ -230,11 +348,12 @@ public class JackConfig {
                 .comment("Koordinat sudut schematic yang paling kecil (x y z).",
                         "Blok pertama di dalam schematic mendarat tepat di sini, jadi kalau",
                         "hasilnya meleset, geser angka ini - bukan schematic-nya.")
-                .define("foodSchematicOrigin", "-4 1 -43");
+                .define("foodSchematicOrigin", "-4 1 -45");
 
         areaDimension = builder
-                .comment("Dimensi tempat meja kafetaria berada.")
-                .define("areaDimension", "minecraft:overworld");
+                .comment("Dimensi tempat meja kafetaria berada. Bawaannya dimensi arena,",
+                        "karena di situlah seluruh permainan berlangsung.")
+                .define("areaDimension", "jackofhearts:arena");
 
         areaFrom = builder
                 .comment("Sudut pertama kotak meja kafetaria, ditulis \"x y z\".",

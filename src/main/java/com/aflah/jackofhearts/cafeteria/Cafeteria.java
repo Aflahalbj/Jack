@@ -98,6 +98,16 @@ public final class Cafeteria {
      * penjaga ini satu klik memotong stok dua kali.</p>
      */
     private final Map<UUID, Long> lastTake = new HashMap<>();
+    /**
+     * Berapa porsi beracun yang masih tersembunyi di antara tiap jenis makanan.
+     *
+     * <p>Racunnya menempel di <b>jenis</b> makanan, bukan di satu piring tertentu.
+     * Alasannya bukan penyederhanaan: yang diambil orang dari meja adalah "satu roti",
+     * dan piring mana yang diklik tidak pernah jadi pertimbangan siapa pun. Kalau
+     * racunnya diikat ke satu piring, Jack praktis harus berharap korbannya kebetulan
+     * mengklik piring yang itu.</p>
+     */
+    private final Map<Item, Integer> poisoned = new HashMap<>();
 
     // ------------------------------------------------------------------ state
 
@@ -273,6 +283,7 @@ public final class Cafeteria {
     /** Menata ulang meja dan mengisi stok untuk satu game baru. */
     @Nullable
     public Component start(MinecraftServer server, int playerCount) {
+        poisoned.clear();
         // Meja dipasang ulang dari schematic dulu, sebelum penataannya dibaca: yang
         // dipakai sepanjang permainan harus isi schematic itu, bukan potret keadaan
         // terakhir yang kebetulan sempat terbaca.
@@ -308,6 +319,7 @@ public final class Cafeteria {
         spots.clear();
         onTable.clear();
         lastTake.clear();
+        poisoned.clear();
         FoodStash.clear();
         idleTimer = IDLE_SCAN_TICKS;
         sync();
@@ -379,8 +391,77 @@ public final class Cafeteria {
             return false;
         }
         CafeteriaLayout.get(server).set(readArea(level));
-        JackOfHeartsMod.LOGGER.info("[JackOfHearts] Schematic makanan dipasang: {} blok.", placed);
         return true;
+    }
+
+    // ------------------------------------------------------------------ racun
+
+    /** Penanda NBT porsi beracun. Tidak muncul di tooltip, jadi tidak terlihat siapa pun. */
+    public static final String POISON_TAG = "JackPoison";
+
+    /**
+     * Jack meracuni satu jenis makanan.
+     *
+     * @return false kalau blok yang diklik bukan piring makanan kafetaria.
+     */
+    public boolean poison(ServerPlayer jack, BlockPos pos, BlockState state) {
+        if (!active || !inArea(jack.level(), pos)) {
+            return false;
+        }
+        Item food = CafeteriaFood.foodOf(state);
+        if (food == null) {
+            return false;
+        }
+        poisoned.merge(food, 1, Integer::sum);
+        return true;
+    }
+
+    /**
+     * Berapa porsi jenis makanan ini yang masih tersisa di meja.
+     *
+     * <p>Yang dihitung isi meja, bukan angka stok: stok adalah jumlah yang belum
+     * dikeluarkan sama sekali, sedangkan yang bisa terambil orang berikutnya cuma yang
+     * benar-benar tergambar di piring.</p>
+     */
+    private int servingsLeftOf(Item food) {
+        int left = 0;
+        for (int i = 0; i < spots.size(); i++) {
+            if (CafeteriaFood.foodOf(spots.get(i).state()) == food) {
+                left += onTable.get(i);
+            }
+        }
+        return left;
+    }
+
+    public boolean isPoisoned(Item food) {
+        return poisoned.getOrDefault(food, 0) > 0;
+    }
+
+    /**
+     * Menentukan porsi yang barusan diambil beracun atau tidak.
+     *
+     * <p>Peluangnya setengah, dan begitu porsi beracunnya terambil, sisanya aman semua.
+     * Itu yang membuat racun terasa seperti jebakan, bukan seperti hukuman: orang
+     * berikutnya yang mengantre benar-benar aman, dan yang apes memang apes.</p>
+     */
+    private void taint(ServerPlayer player, Item food, ItemStack stack) {
+        int left = poisoned.getOrDefault(food, 0);
+        if (left <= 0) {
+            return;
+        }
+        // Peluang setengah itu cuma berlaku selama masih ada porsi lain yang bisa
+        // terambil. Begitu sisa porsi jenis ini tinggal sebanyak yang diracuni, tidak ada
+        // lagi porsi aman untuk diundi - yang terambil pasti yang beracun.
+        boolean forced = servingsLeftOf(food) <= left;
+        if (!forced && player.getRandom().nextFloat() >= 0.5F) {
+            return;
+        }
+        if (left <= 1) {
+            poisoned.remove(food);
+        } else {
+            poisoned.put(food, left - 1);
+        }
+        stack.getOrCreateTag().putBoolean(POISON_TAG, true);
     }
 
     // ------------------------------------------------------------------ pengambilan
@@ -423,6 +504,7 @@ public final class Cafeteria {
 
         stock--;
         ItemStack stack = new ItemStack(food);
+        taint(player, food, stack);
         Component name = stack.getHoverName();
         if (!player.getInventory().add(stack)) {
             player.drop(stack, false);

@@ -43,7 +43,12 @@ public final class HungerRules {
 
     private static final Map<UUID, Float> LAST = new HashMap<>();
 
-    public static void tick(ServerPlayer player) {
+    /**
+     * @param cursed sasaran skill lapar milik Jack: pengalinya digandakan lagi sampai
+     *               dia disembuhkan. Digandakan, bukan ditambah angka tetap, supaya
+     *               efeknya tetap sebanding berapa pun setelan servernya.
+     */
+    public static void tick(ServerPlayer player, boolean cursed) {
         FoodData food = player.getFoodData();
         UUID uuid = player.getUUID();
         float current = food.getExhaustionLevel();
@@ -61,6 +66,9 @@ public final class HungerRules {
         gained = Mth.clamp(gained, 0.0F, DRAIN_STEP);
 
         float multiplier = JackConfig.CONFIG.hungerMultiplier.get().floatValue();
+        if (cursed) {
+            multiplier *= 2.0F;
+        }
         float idlePerTick = JackConfig.CONFIG.hungerIdleDrain.get().floatValue() / 20.0F;
 
         // Tetesan diam itu LANTAI, bukan tambahan. Yang dipakai tiap tick adalah yang
