@@ -138,5 +138,6 @@ public class ClientEvents {
         // dan di sana UUID yang sama belum tentu orang yang sama.
         PlayerSkins.reset();
         ClientSkills.reset();
+        ClientCutscene.reset();
     }
 }

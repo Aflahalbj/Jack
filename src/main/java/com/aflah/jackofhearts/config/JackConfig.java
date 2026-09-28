@@ -51,6 +51,7 @@ public class JackConfig {
     public final ForgeConfigSpec.IntValue milkMax;
     public final ForgeConfigSpec.BooleanValue unknownRole;
     public final ForgeConfigSpec.IntValue unknownMax;
+    public final ForgeConfigSpec.BooleanValue cutscene;
 
     public final ForgeConfigSpec.DoubleValue hungerMultiplier;
     public final ForgeConfigSpec.DoubleValue hungerIdleDrain;
@@ -224,6 +225,13 @@ public class JackConfig {
                         "cukup: selalu disisakan paling tidak satu Ace.",
                         "Disetel lewat /jack setting unknown max <jumlah>.")
                 .defineInRange("unknownMax", 1, 1, 16);
+
+        cutscene = builder
+                .comment("Putar cutscene pembuka (kamera terbang di atas arena, logo, petir) sebelum",
+                        "peran dikocok. Pemain baru dipindahkan ke titik kumpul sesudah cutscene-nya",
+                        "selesai. Disetel lewat /jack cutscene on|off; /jack cutscene play untuk",
+                        "melihatnya tanpa memulai game.")
+                .define("cutscene", true);
 
         milkMax = builder
                 .comment("Berapa susu penawar yang muncul sepanjang satu permainan.",

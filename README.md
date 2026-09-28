@@ -381,7 +381,54 @@ merah.
 
 ### Pembagian peran
 
-Tepat saat animasi dimulai, chat semua orang dapat spanduk pembuka `🔪 GAME DIMULAI 🔪`
+#### Cutscene pembuka
+
+Kalau cutscene dinyalakan (bawaannya **on**), `/jack start` memutar cutscene lebih dulu,
+baru sesudahnya semua orang dipindahkan ke titik kumpul dan perannya dikocok.
+
+```
+/jack cutscene on|off          (tersimpan ke config)
+/jack cutscene play [pemain]   (pratinjau tanpa memulai game; tanpa argumen = kamu sendiri)
+```
+
+Urutannya, semua di dimensi arena:
+
+1. Layar hitam sebentar (±2 detik) sementara badan penonton dipindahkan, lalu memudar.
+   Jam dunia dipaksa jadi **malam** (`/time set night`, 13000) selama cutscene — di semua
+   dimensi, karena arena menumpang jam overworld — dan dikembalikan ke jam semula begitu
+   cutscene selesai atau dibatalkan.
+2. **Naik** (6 detik): kamera dari `0 -2.270 115.166` (hadap `-179.6 / -7.7`) ke
+   `0 35 145` (hadap `-179.6 / 7.2`). Jalurnya **melengkung** (kurva Bezier) — naik dulu,
+   berayun sedikit ke samping sambil agak miring menikung, lalu mundur — bukan garis
+   miring lurus. Arahnya dikoreksi sedikit selama berayun supaya arena tetap di tengah.
+3. **Logo** (3,5 detik): `cutscene.png` muncul di tengah layar selebar ±32% layar, dengan
+   satu dentuman petir. Kamera nyaris diam, cuma bergeser sangat pelan.
+4. **Maju** (6 detik): kamera maju pelan lalu makin cepat ke arah arena sambil petir
+   menyambar di kejauhan — empat sambaran saja, kilat putih tipis, dan bunyi guntur, tanpa
+   guncangan kamera — lalu layarnya menggelap.
+5. Permainan dimulai: pindah ke titik kumpul, spanduk chat, animasi kocok kartu.
+
+Kameranya digerakkan **client** tiap frame, jadi halus di frame rate berapa pun — bukan
+armor stand yang digeser server 20 kali sedetik. Server cuma memegang kapan mulai dan
+kapan selesai, dan selesainya selalu dari server: pembagian peran tidak pernah muncul
+selagi kamera seseorang masih melayang.
+
+Selama cutscene, HUD dan chat disembunyikan, ada pita hitam tipis di atas-bawah, semua
+pemain tidak digambar, dan gerakan serta klik dikunci. Petirnya cuma ada di client
+(`visualOnly`), tidak membakar dan tidak menyambar siapa pun.
+
+Badan tiap penonton dititipkan di `0 16 131` dalam mode penonton selama cutscene. Perlu:
+server cuma mengirim chunk di sekitar **badan** pemain, jadi badan yang tertinggal di lobi
+membuat kameranya melayang di atas dunia kosong. `/jack stop` di tengah cutscene
+mengembalikan semua orang ke tempat dan mode permainan asalnya; begitu juga akhir
+pratinjau. Yang keluar di tengah cutscene dikembalikan saat dia masuk lagi — dan kalau itu
+cutscene pembuka, game-nya batal dimulai dengan menyebut namanya, sama seperti aturan
+`/jack start` biasa.
+
+Semua angka jalurnya ada di `game/CutsceneTimeline.java` (titik, sudut, panjang tiap
+babak) dan bentuk lengkungnya di `client/CutscenePath.java`.
+
+Tepat saat animasi dimulai, chat semua orang dapat spanduk pembuka `♥️ GAME DIMULAI ♥️`
 lengkap dengan logo Discord dan kredit dev — bentuknya sama dengan spanduk mod Deception.
 Logonya glyph dari font ikon mod ini sendiri (`assets/jackofhearts/font/icons.json`,
 karakter U+E000), bukan emoji, jadi font vanilla tidak tersentuh.
@@ -1402,6 +1449,8 @@ sedang mencari mangsa.
 | `/jack setting unknown set <targets> [once\|always]` | Pemain ini **pasti** dapat peran Unknown; tanpa argumen = `once` |
 | `/jack setting unknown unset <targets>` | Batalkan penunjukan itu |
 | `/jack setting unknown clear` | Kosongkan seluruh daftar penunjukan Unknown |
+| `/jack cutscene on\|off` | Putar cutscene pembuka sebelum game dimulai atau tidak (bawaan **on**) |
+| `/jack cutscene play [<targets>]` | Pratinjau cutscene tanpa memulai game; tanpa argumen = kamu sendiri |
 | `/jack refill` | Pasang ulang meja dari schematic dan isi stok penuh dengan `maxfood` terbaru |
 | `/jack setting maxfood <porsi>` | Stok satu game, angka pasti |
 | `/jack setting maxfood default` | Kembali ke bawaan: **8 porsi x jumlah pemain** |

@@ -139,5 +139,6 @@
   "affliction.jackofhearts.poison": "Racun",
   "affliction.jackofhearts.drunk": "Mabuk",
   "affliction.jackofhearts.hunger": "Lapar",
-  "message.jackofhearts.marker_type_off": "Tercatat, tapi %s sedang dimatikan sebagai tempat susu."
+  "message.jackofhearts.marker_type_off": "Tercatat, tapi %s sedang dimatikan sebagai tempat susu.",
+  "message.jackofhearts.cutscene_busy": "Cutscene masih berjalan. Tunggu sampai selesai, atau /jack stop."
 }

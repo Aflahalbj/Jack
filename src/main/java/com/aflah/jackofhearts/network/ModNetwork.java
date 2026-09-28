@@ -97,6 +97,12 @@ public class ModNetwork {
                 .decoder(SubmitGuessPacket::decode)
                 .consumerMainThread(SubmitGuessPacket::handle)
                 .add();
+
+        CHANNEL.messageBuilder(CutscenePacket.class, nextId++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(CutscenePacket::encode)
+                .decoder(CutscenePacket::decode)
+                .consumerMainThread(CutscenePacket::handle)
+                .add();
     }
 
     public static void toServer(Object packet) {

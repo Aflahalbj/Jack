@@ -380,7 +380,9 @@ public class ServerEvents {
     @SubscribeEvent
     public static void onServerStopping(ServerStoppingEvent event) {
         MinecraftServer server = event.getServer();
-        if (GameManager.get().isRunning()) {
+        // Cutscene ikut: penontonnya sedang dipinjam badannya di mode penonton, dan
+        // server yang mati di situ meninggalkan mereka melayang di arena.
+        if (GameManager.get().isRunning() || GameManager.get().isCutscenePlaying()) {
             GameManager.get().stop(server, false);
         }
     }

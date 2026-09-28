@@ -170,6 +170,13 @@ public class JackCommand {
                                                 IntegerArgumentType.getInteger(ctx, "count"))))))
                 .then(Commands.literal("list").executes(JackCommand::showSettings)));
 
+        root.then(host("cutscene")
+                .then(Commands.literal("on").executes(ctx -> setCutscene(ctx, true)))
+                .then(Commands.literal("off").executes(ctx -> setCutscene(ctx, false)))
+                .then(Commands.literal("play")
+                        .executes(ctx -> playCutscene(ctx, List.of(ctx.getSource().getPlayerOrException())))
+                        .then(Commands.argument("targets", EntityArgument.players())
+                                .executes(ctx -> playCutscene(ctx, EntityArgument.getPlayers(ctx, "targets"))))));
         root.then(host("refill").executes(JackCommand::refill));
         root.then(host("gotoarena").executes(ctx -> goTo(ctx, true)));
         root.then(host("gotooverworld").executes(ctx -> goTo(ctx, false)));
@@ -418,6 +425,39 @@ public class JackCommand {
                         + (enabled ? "" : " Perannya masih OFF - nyalakan lewat /jack setting unknown on."))
                 .withStyle(enabled ? ChatFormatting.AQUA : ChatFormatting.YELLOW), true);
         return count;
+    }
+
+    private static int setCutscene(CommandContext<CommandSourceStack> ctx, boolean enabled) {
+        JackConfig.CONFIG.cutscene.set(enabled);
+        JackConfig.CONFIG.cutscene.save();
+        ctx.getSource().sendSuccess(() -> Component.literal("Cutscene pembuka: " + (enabled ? "ON" : "OFF")
+                        + ". Berlaku mulai /jack start berikutnya.")
+                .withStyle(enabled ? ChatFormatting.GREEN : ChatFormatting.YELLOW), true);
+        return enabled ? 1 : 0;
+    }
+
+    /**
+     * Pratinjau cutscene tanpa memulai game. Selesainya mengembalikan semua penonton ke
+     * tempat dan mode permainan asalnya.
+     *
+     * <p>Ditolak selama game berjalan: cutscene meminjam badan penontonnya, dan badan
+     * peserta yang dipinjam di tengah ronde tidak bisa dikembalikan tanpa merusak
+     * rondenya.</p>
+     */
+    private static int playCutscene(CommandContext<CommandSourceStack> ctx, Collection<ServerPlayer> targets) {
+        GameManager manager = GameManager.get();
+        if (manager.isRunning()) {
+            ctx.getSource().sendFailure(Component.translatable("message.jackofhearts.already_running"));
+            return 0;
+        }
+        Component error = manager.playCutscene(ctx.getSource().getServer(), targets, false);
+        if (error != null) {
+            ctx.getSource().sendFailure(error);
+            return 0;
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal("Cutscene diputar untuk " + targets.size()
+                + " pemain.").withStyle(ChatFormatting.AQUA), false);
+        return targets.size();
     }
 
     private static int setMilkMax(CommandContext<CommandSourceStack> ctx, int count) {
@@ -835,7 +875,8 @@ public class JackCommand {
                         + skillLabel(JackConfig.CONFIG.skillHunger, JackConfig.CONFIG.skillHungerMax)
                         + " | poison "
                         + skillLabel(JackConfig.CONFIG.skillPoison, JackConfig.CONFIG.skillPoisonMax)
-                        + " | milk " + JackConfig.CONFIG.milkMax.get())
+                        + " | milk " + JackConfig.CONFIG.milkMax.get()
+                        + " | cutscene " + (JackConfig.CONFIG.cutscene.get() ? "on" : "off"))
                 .withStyle(ChatFormatting.LIGHT_PURPLE), false);
         reportDimensions(source);
         source.sendSuccess(() -> Component.literal("foodschem: "
@@ -1064,11 +1105,11 @@ public class JackCommand {
     private static int start(CommandContext<CommandSourceStack> ctx, Collection<ServerPlayer> targets) {
         CommandSourceStack source = ctx.getSource();
         GameManager manager = GameManager.get();
-        if (manager.isRunning()) {
+        if (manager.isRunning() || manager.isCutscenePlaying()) {
             source.sendFailure(Component.translatable("message.jackofhearts.already_running"));
             return 0;
         }
-        Component error = manager.start(source.getServer(), new ArrayList<>(targets));
+        Component error = manager.startWithCutscene(source.getServer(), new ArrayList<>(targets));
         if (error != null) {
             source.sendFailure(error);
             return 0;

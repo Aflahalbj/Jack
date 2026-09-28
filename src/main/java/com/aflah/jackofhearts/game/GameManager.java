@@ -12,6 +12,7 @@ import com.aflah.jackofhearts.entity.Blood;
 import com.aflah.jackofhearts.entity.CorpseEntity;
 import com.aflah.jackofhearts.entity.MannequinEntity;
 import com.aflah.jackofhearts.item.SymbolArmorItem;
+import com.aflah.jackofhearts.network.CutscenePacket;
 import com.aflah.jackofhearts.network.ModNetwork;
 import com.aflah.jackofhearts.network.JackListPacket;
 import com.aflah.jackofhearts.network.LaserPacket;
@@ -78,7 +79,7 @@ import net.minecraft.world.phys.Vec3;
 import javax.annotation.Nullable;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.Collection;
 import java.util.Deque;
 import java.util.Collections;
 import java.util.HashSet;
@@ -541,18 +542,56 @@ public class GameManager {
 
     // ------------------------------------------------------------------ start / stop
 
-    /** Mengocok peran dan memulai ronde 1. Mengembalikan pesan error kalau gagal. */
-    @Nullable
-    public Component start(MinecraftServer server, List<ServerPlayer> pool) {
+    /**
+     * Pemain yang benar-benar bisa ikut: yang sedang di mode penonton dilewati.
+     */
+    private static List<ServerPlayer> eligible(Collection<ServerPlayer> pool) {
         List<ServerPlayer> players = new ArrayList<>(pool);
         players.removeIf(p -> p.gameMode.getGameModeForPlayer() == GameType.SPECTATOR);
+        return players;
+    }
 
+    /** @return pesan kegagalan kalau pemainnya tidak cukup untuk dibagi peran. */
+    @Nullable
+    private Component checkPlayerCount(List<ServerPlayer> players) {
         int forcedInPool = (int) players.stream().filter(p -> forcedJacks.containsKey(p.getUUID())).count();
         int jackCount = jackCountFor(forcedInPool);
         if (players.size() < jackCount + 1) {
             return Component.translatable("message.jackofhearts.not_enough_players", jackCount + 1)
                     .withStyle(ChatFormatting.RED);
         }
+        return null;
+    }
+
+    /**
+     * Memulai game, didahului cutscene pembuka kalau cutscene-nya dinyalakan.
+     *
+     * <p>Jumlah pemainnya diperiksa di sini, <b>sebelum</b> cutscene diputar: menonton
+     * lima belas detik kamera terbang hanya untuk diberi tahu pemainnya kurang satu
+     * adalah cara paling menyebalkan untuk gagal.</p>
+     */
+    @Nullable
+    public Component startWithCutscene(MinecraftServer server, List<ServerPlayer> pool) {
+        if (!JackConfig.CONFIG.cutscene.get()) {
+            return start(server, pool);
+        }
+        Component error = checkPlayerCount(eligible(pool));
+        if (error != null) {
+            return error;
+        }
+        return playCutscene(server, pool, true);
+    }
+
+    /** Mengocok peran dan memulai ronde 1. Mengembalikan pesan error kalau gagal. */
+    @Nullable
+    public Component start(MinecraftServer server, List<ServerPlayer> pool) {
+        List<ServerPlayer> players = eligible(pool);
+        Component countError = checkPlayerCount(players);
+        if (countError != null) {
+            return countError;
+        }
+        int forcedInPool = (int) players.stream().filter(p -> forcedJacks.containsKey(p.getUUID())).count();
+        int jackCount = jackCountFor(forcedInPool);
 
         prepareArena(server, players);
 
@@ -794,7 +833,201 @@ public class GameManager {
         }
     }
 
+    // ------------------------------------------------------------------ cutscene pembuka
+
+    /**
+     * Satu penonton cutscene beserta keadaannya sebelum badannya dipinjam, supaya bisa
+     * dikembalikan persis kalau cutscene-nya batal atau cuma pratinjau.
+     */
+    private record CutsceneViewer(String name, ResourceKey<Level> dimension, Vec3 position,
+                                  float yRot, float xRot, GameType mode) {
+    }
+
+    private final Map<UUID, CutsceneViewer> cutsceneViewers = new LinkedHashMap<>();
+    /**
+     * Penonton yang sedang offline saat cutscene-nya selesai atau batal. Badannya
+     * tertinggal di mode penonton di tengah udara, jadi dipulihkan begitu dia masuk lagi.
+     */
+    private final Map<UUID, CutsceneViewer> cutsceneRestore = new LinkedHashMap<>();
+    /** Sisa tick cutscene, termasuk jeda pemanasan; 0 berarti tidak ada yang diputar. */
+    private int cutsceneTimer;
+    /** true kalau cutscene ini pembuka game: selesainya langsung memulai permainan. */
+    private boolean cutsceneStartsGame;
+    /** Jam dunia sebelum cutscene memaksanya jadi malam; -1 berarti tidak ada yang dipinjam. */
+    private long cutsceneTimeBefore = -1L;
+
+    /**
+     * Jam semua dimensi sekaligus, persis seperti {@code /time set}.
+     *
+     * <p>Satu per satu tidak cukup: dimensi tambahan seperti arena tidak punya jamnya
+     * sendiri — jamnya menumpang overworld, dan menyetel jam arena saja tidak mengubah
+     * apa pun.</p>
+     */
+    private static void setTime(MinecraftServer server, long time) {
+        for (ServerLevel level : server.getAllLevels()) {
+            level.setDayTime(time);
+        }
+    }
+
+    /**
+     * Kembalikan jam dunia seperti sebelum cutscene. Permainannya dimainkan di jam yang
+     * dipilih host, bukan di malam yang cuma dipinjam untuk tontonan pembuka.
+     */
+    private void restoreCutsceneTime(MinecraftServer server) {
+        if (cutsceneTimeBefore >= 0L) {
+            setTime(server, cutsceneTimeBefore);
+            cutsceneTimeBefore = -1L;
+        }
+    }
+
+    public boolean isCutscenePlaying() {
+        return cutsceneTimer > 0;
+    }
+
+    /**
+     * Memutar cutscene pembuka untuk sekelompok pemain.
+     *
+     * <p>Badan tiap penonton dipindahkan ke tengah jalur kamera di dimensi arena dan
+     * dijadikan penonton selama cutscene. Bukan untuk bersembunyi: server cuma mengirim
+     * chunk di sekitar badan pemain, jadi badan yang tertinggal di lobi membuat kameranya
+     * melayang di atas dunia kosong. Layar mereka dibuat hitam lebih dulu, jadi
+     * perpindahan itu sendiri tidak pernah terlihat.</p>
+     *
+     * @param startsGame true untuk pembuka game: selesainya memulai permainan dengan
+     *                   penonton yang sama. false untuk pratinjau: selesainya
+     *                   mengembalikan semua orang ke tempat asalnya.
+     */
+    @Nullable
+    public Component playCutscene(MinecraftServer server, Collection<ServerPlayer> viewers, boolean startsGame) {
+        if (isCutscenePlaying()) {
+            return Component.translatable("message.jackofhearts.cutscene_busy").withStyle(ChatFormatting.RED);
+        }
+        ServerLevel arena = Arena.level(server);
+        cutsceneViewers.clear();
+        for (ServerPlayer player : viewers) {
+            cutsceneViewers.put(player.getUUID(), new CutsceneViewer(player.getGameProfile().getName(),
+                    player.level().dimension(), player.position(), player.getYRot(), player.getXRot(),
+                    player.gameMode.getGameModeForPlayer()));
+            ModNetwork.toPlayer(player, new CutscenePacket(CutscenePacket.PREPARE));
+            Vec3 body = CutsceneTimeline.BODY;
+            player.setGameMode(GameType.SPECTATOR);
+            player.teleportTo(arena != null ? arena : player.serverLevel(), body.x, body.y, body.z,
+                    CutsceneTimeline.TOP_YAW, 0.0F);
+        }
+        cutsceneStartsGame = startsGame;
+        cutsceneTimer = CutsceneTimeline.WARMUP_TICKS + CutsceneTimeline.TOTAL_TICKS;
+        cutsceneTimeBefore = server.overworld().getDayTime();
+        setTime(server, CutsceneTimeline.NIGHT_TIME);
+        JackOfHeartsMod.LOGGER.info("[JackOfHearts] Cutscene diputar untuk {} pemain{}.", viewers.size(),
+                startsGame ? ", game dimulai sesudahnya" : " (pratinjau)");
+        return null;
+    }
+
+    private void tickCutscene(MinecraftServer server) {
+        if (cutsceneTimer <= 0) {
+            return;
+        }
+        cutsceneTimer--;
+        if (cutsceneTimer == CutsceneTimeline.TOTAL_TICKS) {
+            for (ServerPlayer player : onlineCutsceneViewers(server)) {
+                ModNetwork.toPlayer(player, new CutscenePacket(CutscenePacket.PLAY));
+            }
+        }
+        if (cutsceneTimer == 0) {
+            finishCutscene(server);
+        }
+    }
+
+    private List<ServerPlayer> onlineCutsceneViewers(MinecraftServer server) {
+        List<ServerPlayer> online = new ArrayList<>();
+        for (UUID uuid : cutsceneViewers.keySet()) {
+            ServerPlayer player = server.getPlayerList().getPlayer(uuid);
+            if (player != null) {
+                online.add(player);
+            }
+        }
+        return online;
+    }
+
+    /**
+     * Cutscene-nya habis. Untuk pembuka game, permainan dimulai di sini — dan di situlah
+     * semua orang dipindahkan ke titik kumpul, sama seperti /jack start tanpa cutscene.
+     *
+     * <p>Aturan "semua yang terdaftar harus online" diperiksa ulang: ada yang bisa keluar
+     * selama cutscene berjalan, dan memulai tanpa dia berarti dia dicoret diam-diam dari
+     * daftar yang disusun host.</p>
+     */
+    private void finishCutscene(MinecraftServer server) {
+        Map<UUID, CutsceneViewer> viewers = new LinkedHashMap<>(cutsceneViewers);
+        cutsceneViewers.clear();
+        cutsceneTimer = 0;
+        restoreCutsceneTime(server);
+
+        List<ServerPlayer> online = new ArrayList<>();
+        List<String> missing = new ArrayList<>();
+        for (Map.Entry<UUID, CutsceneViewer> entry : viewers.entrySet()) {
+            ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
+            if (player == null) {
+                missing.add(entry.getValue().name());
+                cutsceneRestore.put(entry.getKey(), entry.getValue());
+                continue;
+            }
+            online.add(player);
+            ModNetwork.toPlayer(player, new CutscenePacket(CutscenePacket.STOP));
+        }
+
+        if (!cutsceneStartsGame) {
+            for (ServerPlayer player : online) {
+                restoreViewer(player, viewers.get(player.getUUID()));
+            }
+            return;
+        }
+
+        // Mode permainannya dikembalikan dulu: start() membuang siapa pun yang sedang di
+        // mode penonton, dan mode penonton ini cuma pinjaman cutscene.
+        for (ServerPlayer player : online) {
+            player.setGameMode(viewers.get(player.getUUID()).mode());
+        }
+        Component error = missing.isEmpty()
+                ? start(server, online)
+                : Component.translatable("message.jackofhearts.start_needs_online", String.join(", ", missing))
+                        .withStyle(ChatFormatting.RED);
+        if (error != null) {
+            for (ServerPlayer player : online) {
+                restoreViewer(player, viewers.get(player.getUUID()));
+            }
+            broadcast(server, error);
+        }
+    }
+
+    /** Batalkan cutscene yang sedang jalan dan kembalikan semua penontonnya. */
+    private void cancelCutscene(MinecraftServer server) {
+        if (!isCutscenePlaying()) {
+            return;
+        }
+        cutsceneTimer = 0;
+        restoreCutsceneTime(server);
+        for (Map.Entry<UUID, CutsceneViewer> entry : cutsceneViewers.entrySet()) {
+            ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
+            if (player == null) {
+                cutsceneRestore.put(entry.getKey(), entry.getValue());
+                continue;
+            }
+            ModNetwork.toPlayer(player, new CutscenePacket(CutscenePacket.STOP));
+            restoreViewer(player, entry.getValue());
+        }
+        cutsceneViewers.clear();
+    }
+
+    private static void restoreViewer(ServerPlayer player, CutsceneViewer viewer) {
+        ServerLevel level = player.server.getLevel(viewer.dimension());
+        player.setGameMode(viewer.mode());
+        player.teleportTo(level != null ? level : player.serverLevel(),
+                viewer.position().x, viewer.position().y, viewer.position().z, viewer.yRot(), viewer.xRot());
+    }
+
     public void stop(MinecraftServer server, boolean announce) {
+        cancelCutscene(server);
         server.setPvpAllowed(pvpBefore);
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             restoreReach(player);
@@ -861,6 +1094,9 @@ public class GameManager {
         // Di luar penjagaan isRunning() di bawah: penanda wadah justru dipakai saat
         // tidak ada permainan, waktunya map disusun.
         MilkSupply.tickChecking(server);
+        // Di luar penjagaan isRunning() di bawah: cutscene pembuka justru diputar
+        // sebelum permainannya dimulai.
+        tickCutscene(server);
 
         if (!isRunning()) {
             return;
@@ -3291,6 +3527,18 @@ public class GameManager {
         // dikirim, dan sebelum dia sempat terlihat berdiri berdampingan dengan
         // badannya sendiri.
         OfflinePlayers.get().restore(player);
+
+        // Penonton cutscene yang keluar lalu masuk lagi selagi cutscene-nya masih jalan:
+        // badannya masih di tempat titipan, jadi cukup layarnya dihitamkan sampai
+        // cutscene selesai. Yang masuk lagi sesudahnya dikembalikan ke tempat asalnya.
+        if (cutsceneViewers.containsKey(player.getUUID()) && isCutscenePlaying()) {
+            ModNetwork.toPlayer(player, new CutscenePacket(CutscenePacket.PREPARE));
+        } else {
+            CutsceneViewer stranded = cutsceneRestore.remove(player.getUUID());
+            if (stranded != null && data == null) {
+                restoreViewer(player, stranded);
+            }
+        }
 
         if (data != null && !data.alive && isRunning()) {
             // Dia gugur selagi offline. Tidak ada layar kematian yang bisa
